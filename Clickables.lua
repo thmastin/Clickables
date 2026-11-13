@@ -98,7 +98,29 @@ local function options()
     end
     check("Lock position","locked"); check("Hide when empty (otherwise dim)","hideWhenEmpty"); check("Openables","openables"); check("Quest starter items","questStarters")
     local scale=CreateFrame("Slider",nil,panel,"OptionsSliderTemplate");scale:SetPoint("TOPLEFT",20,y);scale:SetMinMaxValues(0.5,2);scale:SetValueStep(0.1);scale:SetValue(DB.scale);scale:SetWidth(180);_G[scale:GetName().."Text"]:SetText("Scale");scale:SetScript("OnValueChanged",function(_,v) DB.scale=v;frame:SetScale(v) end)
-    local listTitle=panel:CreateFontString(nil,"ARTWORK","GameFontNormal");listTitle:SetPoint("TOPLEFT",16,y-24);listTitle:SetText("Ignored items");y=y-48\n    local clear=CreateFrame("Button",nil,panel,"UIPanelButtonTemplate");clear:SetSize(100,22);clear:SetPoint("TOPLEFT",16,y);clear:SetText("Clear ignore");clear:SetScript("OnClick",function(self) if self.confirmUntil and GetTime()<=self.confirmUntil then wipe(DB.ignored);self.confirmUntil=nil;rebuild() else self.confirmUntil=GetTime()+5;self:SetText("Confirm (5s)") end end);y=y-28\n    for id in pairs(DB.ignored) do local row=panel:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall");row:SetPoint("TOPLEFT",18,y);row:SetText("Item "..id);local remove=CreateFrame("Button",nil,panel,"UIPanelButtonTemplate");remove:SetSize(64,20);remove:SetPoint("TOPLEFT",180,y+4);remove:SetText("Remove");remove:SetScript("OnClick",function() DB.ignored[id]=nil;rebuild() end);y=y-24 end\n    InterfaceOptions_AddCategory(panel)
+    local listTitle=panel:CreateFontString(nil,"ARTWORK","GameFontNormal")
+    listTitle:SetPoint("TOPLEFT",16,y-24)
+    listTitle:SetText("Ignored items")
+    y=y-48
+    local clear=CreateFrame("Button",nil,panel,"UIPanelButtonTemplate")
+    clear:SetSize(100,22); clear:SetPoint("TOPLEFT",16,y); clear:SetText("Clear ignore")
+    clear:SetScript("OnClick",function(self)
+        if self.confirmUntil and GetTime()<=self.confirmUntil then
+            wipe(DB.ignored); self.confirmUntil=nil; self:SetText("Clear ignore"); rebuild()
+        else
+            self.confirmUntil=GetTime()+5; self:SetText("Confirm (5s)")
+        end
+    end)
+    y=y-28
+    for id in pairs(DB.ignored) do
+        local row=panel:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+        row:SetPoint("TOPLEFT",18,y); row:SetText("Item "..id)
+        local remove=CreateFrame("Button",nil,panel,"UIPanelButtonTemplate")
+        remove:SetSize(64,20); remove:SetPoint("TOPLEFT",180,y+4); remove:SetText("Remove")
+        remove:SetScript("OnClick",function() DB.ignored[id]=nil; rebuild(); row:SetText("Removed") end)
+        y=y-24
+    end
+    InterfaceOptions_AddCategory(panel)
 end
 local function slash(msg)
     local cmd,arg=msg:match("^(%S*)%s*(.-)$");cmd=cmd:lower()
@@ -111,4 +133,5 @@ events:SetScript("OnEvent",function(_,event,name)
     elseif event=="PLAYER_REGEN_ENABLED" then rebuild();hookBlizzard();hookEUI()
     elseif event=="BAG_UPDATE_DELAYED" or event=="PLAYER_ENTERING_WORLD" or event=="QUEST_ACCEPTED" then rebuild();hookBlizzard();hookEUI() end
 end)
+
 
