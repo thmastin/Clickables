@@ -1,5 +1,7 @@
 local addonName, ns = ...
 local ADDON, DB, queue = "Clickables", nil, {}
+BINDING_HEADER_CLICKABLES = "Clickables"
+BINDING_NAME_CLICKABLES_USE_NEXT = "Use next Clickable"
 local frame = CreateFrame("Button", "ClickablesButton", UIParent, "SecureActionButtonTemplate,BackdropTemplate")
 frame:SetSize(48,48); frame:RegisterForClicks("AnyUp"); frame:SetAttribute("type", "item")
 frame:SetMovable(true); frame:EnableMouse(true); frame:RegisterForDrag("LeftButton")
@@ -97,7 +99,7 @@ local function options()
         local c=CreateFrame("CheckButton",nil,panel,"InterfaceOptionsCheckButtonTemplate");c:SetPoint("TOPLEFT",16,y);c.Text:SetText(label);c:SetChecked(DB[key]);c:SetScript("OnClick",function(self) DB[key]=self:GetChecked();rebuild() end);y=y-30
     end
     check("Lock position","locked"); check("Hide when empty (otherwise dim)","hideWhenEmpty"); check("Openables","openables"); check("Quest starter items","questStarters")
-    local scale=CreateFrame("Slider",nil,panel,"OptionsSliderTemplate");scale:SetPoint("TOPLEFT",20,y);scale:SetMinMaxValues(0.5,2);scale:SetValueStep(0.1);scale:SetValue(DB.scale);scale:SetWidth(180);_G[scale:GetName().."Text"]:SetText("Scale");scale:SetScript("OnValueChanged",function(_,v) DB.scale=v;frame:SetScale(v) end)
+    local scale=CreateFrame("Slider",nil,panel,"OptionsSliderTemplate");scale:SetPoint("TOPLEFT",20,y);scale:SetMinMaxValues(0.5,2);scale:SetValueStep(0.1);scale:SetValue(DB.scale);scale:SetWidth(180);scale.Text:SetText("Scale");scale:SetScript("OnValueChanged",function(_,v) DB.scale=v;frame:SetScale(v) end)
     local listTitle=panel:CreateFontString(nil,"ARTWORK","GameFontNormal")
     listTitle:SetPoint("TOPLEFT",16,y-24)
     listTitle:SetText("Ignored items")

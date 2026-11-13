@@ -6,4 +6,3 @@
 
 ClickablesCore.lua
 Clickables.lua
-Bindings.xml
