@@ -1,7 +1,7 @@
 local addonName, ns = ...
 local ADDON, DB, queue = "Clickables", nil, {}
 BINDING_HEADER_CLICKABLES = "Clickables"
-BINDING_NAME_CLICKABLES_USE_NEXT = "Use next Clickable"
+_G["BINDING_NAME_CLICK ClickablesButton:LeftButton"] = "Use next Clickable"
 local frame = CreateFrame("Button", "ClickablesButton", UIParent, "SecureActionButtonTemplate,BackdropTemplate")
 frame:SetSize(48,48); frame:RegisterForClicks("AnyUp", "AnyDown"); frame:SetAttribute("type", "item"); frame:SetAttribute("type1", "item")
 frame:SetMovable(true); frame:EnableMouse(true); frame:RegisterForDrag("LeftButton")
