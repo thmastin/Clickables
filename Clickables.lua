@@ -54,6 +54,7 @@ local function position()
     end
     frame:ClearAllPoints(); frame:SetPoint(DB.point or "CENTER",UIParent,DB.point or "CENTER",DB.x or 0,DB.y or -120); frame:SetScale(DB.scale or 1)
 end
+local refreshIgnoredList
 frame:SetScript("OnDragStart",function(self) if not DB.locked and not InCombatLockdown() then self:StartMoving() end end)
 frame:SetScript("OnDragStop",function(self) self:StopMovingOrSizing(); local p,_,_,x,y=self:GetPoint(); DB.point=p;DB.x=x;DB.y=y end)
 frame:SetScript("PreClick",function(self,button)
@@ -64,6 +65,7 @@ frame:SetScript("PreClick",function(self,button)
         local itemLink=current.link or (itemName and ("|Hitem:"..current.itemID.."|h["..itemName.."]|h")) or ("item:"..current.itemID)
         if ignored then print("Clickables: ignored "..itemLink) else print("Clickables: no longer ignoring "..itemLink) end
         rebuild()
+        if refreshIgnoredList then refreshIgnoredList() end
     end
 end)
 frame:SetScript("OnEnter",function(self)
@@ -76,8 +78,9 @@ frame:SetScript("OnLeave",function() GameTooltip:Hide() end)
 local function ignoredItemText(itemID)
     local name=ns.GetItemName(itemID)
     if name then return "|Hitem:"..itemID.."|h["..name.."]|h" end
-    ns.RequestItemLoad(itemID)
-    return "Item "..itemID
+    if C_Item and C_Item.RequestLoadItemDataByID then C_Item.RequestLoadItemDataByID(itemID)
+    else ns.RequestItemLoad(itemID) end
+    return "item:"..itemID
 end
 local function options()
     local panel=CreateFrame("Frame",nil,UIParent); panel.name="Clickables"
@@ -91,32 +94,54 @@ local function options()
     local listTitle=panel:CreateFontString(nil,"ARTWORK","GameFontNormal")
     listTitle:SetPoint("TOPLEFT",16,y-24)
     listTitle:SetText("Ignored items")
-    y=y-48
+    y=y-52
     local clear=CreateFrame("Button",nil,panel,"UIPanelButtonTemplate")
     clear:SetSize(100,22); clear:SetPoint("TOPLEFT",16,y); clear:SetText("Clear ignore")
     clear:SetScript("OnClick",function(self)
         if self.confirmUntil and GetTime()<=self.confirmUntil then
-            wipe(DB.ignored); self.confirmUntil=nil; self:SetText("Clear ignore"); rebuild()
+            wipe(DB.ignored); self.confirmUntil=nil; self:SetText("Clear ignore"); rebuild(); refreshIgnoredList()
         else
             self.confirmUntil=GetTime()+5; self:SetText("Confirm (5s)")
         end
     end)
-    y=y-28
-    for id in pairs(DB.ignored) do
-        local itemID=id
-        local itemIcon=panel:CreateTexture(nil,"ARTWORK")
-        itemIcon:SetSize(18,18); itemIcon:SetPoint("TOPLEFT",18,y-1); itemIcon:SetTexture(ns.GetItemIcon(itemID))
-        local row=panel:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-        row:SetPoint("TOPLEFT",42,y); row:SetText(ignoredItemText(itemID))
-        ns.RequestItemLoad(itemID,function(name,texture)
-            itemIcon:SetTexture(texture)
-            if name then row:SetText("|Hitem:"..itemID.."|h["..name.."]|h") end
+    local scroll=CreateFrame("ScrollFrame",nil,panel,"UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT",panel,"TOPLEFT",16,y-30)
+    scroll:SetPoint("BOTTOMRIGHT",panel,"BOTTOMRIGHT",-32,16)
+    local scrollChild=CreateFrame("Frame",nil,scroll)
+    scrollChild:SetSize(1,1); scroll:SetScrollChild(scrollChild)
+    scroll:SetScript("OnSizeChanged",function(self) scrollChild:SetWidth(math.max(1,self:GetWidth())) end)
+    local empty=scrollChild:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+    empty:SetPoint("TOPLEFT",scrollChild,"TOPLEFT",4,-4)
+    empty:SetText("No ignored items. Alt+right-click the Clickables button to ignore what it’s showing.")
+    empty:SetJustifyH("LEFT"); empty:SetWidth(360)
+    local rows={}
+    local function makeRow()
+        local row=CreateFrame("Frame",nil,scrollChild)
+        row:SetHeight(24)
+        row.icon=row:CreateTexture(nil,"ARTWORK"); row.icon:SetSize(18,18); row.icon:SetPoint("LEFT",row,"LEFT",2,0)
+        row.remove=CreateFrame("Button",nil,row,"UIPanelButtonTemplate"); row.remove:SetSize(64,20); row.remove:SetPoint("RIGHT",row,"RIGHT",-2,0); row.remove:SetText("Remove")
+        row.label=row:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall"); row.label:SetPoint("LEFT",row.icon,"RIGHT",5,0); row.label:SetPoint("RIGHT",row.remove,"LEFT",-6,0); row.label:SetJustifyH("LEFT")
+        row.remove:SetScript("OnClick",function()
+            if row.itemID then DB.ignored[row.itemID]=nil; rebuild(); refreshIgnoredList() end
         end)
-        local remove=CreateFrame("Button",nil,panel,"UIPanelButtonTemplate")
-        remove:SetSize(64,20); remove:SetPoint("TOPLEFT",180,y+4); remove:SetText("Remove")
-        remove:SetScript("OnClick",function() DB.ignored[itemID]=nil; rebuild(); row:SetText("Removed") end)
-        y=y-24
+        return row
     end
+    refreshIgnoredList=function()
+        local ids={}
+        for id,isIgnored in pairs(DB.ignored) do if isIgnored then ids[#ids+1]=id end end
+        table.sort(ids)
+        empty:SetShown(#ids==0)
+        for index,itemID in ipairs(ids) do
+            local row=rows[index] or makeRow(); rows[index]=row
+            row.itemID=itemID; row:ClearAllPoints(); row:SetPoint("TOPLEFT",scrollChild,"TOPLEFT",0,-((index-1)*26)); row:SetPoint("RIGHT",scrollChild,"RIGHT",0,0)
+            row.icon:SetTexture(ns.GetItemIcon(itemID)); row.label:SetText(ignoredItemText(itemID)); row:Show()
+        end
+        for index=#ids+1,#rows do rows[index]:Hide() end
+        scrollChild:SetHeight(math.max(1,#ids*26))
+        scroll:SetVerticalScroll(0)
+    end
+    panel:SetScript("OnShow",refreshIgnoredList)
+    refreshIgnoredList()
     if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
         local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
         Settings.RegisterAddOnCategory(category)
@@ -137,12 +162,13 @@ local function slash(msg)
             print("Clickables ignored: |T"..tostring(ns.GetItemIcon(itemID) or 134400)..":16|t "..link)
             if not name then ns.RequestItemLoad(itemID,function(loadedName,texture) if loadedName then print("Clickables ignored: |T"..tostring(texture or 134400)..":16|t |Hitem:"..itemID.."|h["..loadedName.."]|h") end end) end
         end
-    elseif cmd=="clear" then if not DB.clearUntil or GetTime()>DB.clearUntil then DB.clearUntil=GetTime()+5;print("Clickables: run /clickables clear again within 5 seconds") else wipe(DB.ignored);DB.clearUntil=nil;print("Clickables: ignore list cleared") end end;rebuild()
+    elseif cmd=="clear" then if not DB.clearUntil or GetTime()>DB.clearUntil then DB.clearUntil=GetTime()+5;print("Clickables: run /clickables clear again within 5 seconds") else wipe(DB.ignored);DB.clearUntil=nil;print("Clickables: ignore list cleared");if refreshIgnoredList then refreshIgnoredList() end end end;rebuild()
 end
 SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
-local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED")
+local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED");events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 events:SetScript("OnEvent",function(_,event,name)
-    if event=="ADDON_LOADED" and name==addonName then DB=ns.MergeDefaults(ClickablesDB);ClickablesDB=DB;position();options();rebuild()
+    if event=="GET_ITEM_INFO_RECEIVED" then if refreshIgnoredList then refreshIgnoredList() end
+    elseif event=="ADDON_LOADED" and name==addonName then DB=ns.MergeDefaults(ClickablesDB);ClickablesDB=DB;position();options();rebuild()
     elseif event=="PLAYER_REGEN_ENABLED" then rebuild()
     elseif event=="BAG_UPDATE_DELAYED" or event=="PLAYER_ENTERING_WORLD" or event=="QUEST_ACCEPTED" then rebuild() end
 end)
