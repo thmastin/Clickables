@@ -3,7 +3,7 @@ local ADDON, DB, queue = "Clickables", nil, {}
 BINDING_HEADER_CLICKABLES = "Clickables"
 BINDING_NAME_CLICKABLES_USE_NEXT = "Use next Clickable"
 local frame = CreateFrame("Button", "ClickablesButton", UIParent, "SecureActionButtonTemplate,BackdropTemplate")
-frame:SetSize(48,48); frame:RegisterForClicks("AnyUp"); frame:SetAttribute("type", "item")
+frame:SetSize(48,48); frame:RegisterForClicks("AnyUp", "AnyDown"); frame:SetAttribute("type", "item"); frame:SetAttribute("type1", "item")
 frame:SetMovable(true); frame:EnableMouse(true); frame:RegisterForDrag("LeftButton")
 frame:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"}); frame:SetBackdropColor(0.04,0.04,0.04,0.75)
 local icon=frame:CreateTexture(nil,"ARTWORK"); icon:SetAllPoints(); frame.icon=icon
@@ -56,7 +56,12 @@ local function position()
 end
 frame:SetScript("OnDragStart",function(self) if not DB.locked and not InCombatLockdown() then self:StartMoving() end end)
 frame:SetScript("OnDragStop",function(self) self:StopMovingOrSizing(); local p,_,_,x,y=self:GetPoint(); DB.point=p;DB.x=x;DB.y=y end)
-frame:SetScript("OnClick",function(self,button) if button=="RightButton" and IsAltKeyDown() and queue[1] then ns.ToggleIgnore(DB.ignored,queue[1].itemID); rebuild() end end)
+frame:SetScript("PreClick",function(self,button)
+    if button=="RightButton" and IsAltKeyDown() and queue[1] and not InCombatLockdown() then
+        ns.ToggleIgnore(DB.ignored,queue[1].itemID)
+        rebuild()
+    end
+end)
 frame:SetScript("OnEnter",function(self)
     GameTooltip:SetOwner(self,"ANCHOR_RIGHT"); local d=queue[1]
     if d and d.link then GameTooltip:SetHyperlink(d.link) else GameTooltip:AddLine("No clickable items") end
@@ -64,12 +69,6 @@ frame:SetScript("OnEnter",function(self)
     GameTooltip:AddLine("Click to use the next item",0.5,1,0.5); GameTooltip:AddLine("Alt+right-click to ignore",0.5,1,0.5); GameTooltip:Show()
 end)
 frame:SetScript("OnLeave",function() GameTooltip:Hide() end)
-local function useContainerItem(bag, slot)
-    if C_Container and C_Container.UseContainerItem then return C_Container.UseContainerItem(bag, slot) end
-    if UseContainerItem then return UseContainerItem(bag, slot) end
-end
-function UseNextClickable() if queue[1] and not InCombatLockdown() then useContainerItem(queue[1].bag,queue[1].slot) end end
-
 local function toggleBagButton(button)
     if button.clickablesHooked then return end; button.clickablesHooked=true
     hooksecurefunc(button,"OnClick",function(self,mouseButton)
@@ -133,7 +132,10 @@ local function options()
 end
 local function slash(msg)
     local cmd,arg=msg:match("^(%S*)%s*(.-)$");cmd=cmd:lower()
-    if cmd=="lock" then DB.locked=true elseif cmd=="unlock" then DB.locked=false elseif cmd=="scale" then DB.scale=tonumber(arg) or DB.scale;frame:SetScale(DB.scale) elseif cmd=="list" then for id in pairs(DB.ignored) do print("Clickables ignored:",id) end elseif cmd=="clear" then if not DB.clearUntil or GetTime()>DB.clearUntil then DB.clearUntil=GetTime()+5;print("Clickables: run /clickables clear again within 5 seconds") else wipe(DB.ignored);DB.clearUntil=nil;print("Clickables: ignore list cleared") end end;rebuild()
+    if cmd=="debug" then
+        local clicks=frame.GetRegisteredClicks and table.concat({frame:GetRegisteredClicks()},", ") or "AnyUp, AnyDown (configured)"
+        print("Clickables debug: type="..tostring(frame:GetAttribute("type"))..", item="..tostring(frame:GetAttribute("item"))..", type1="..tostring(frame:GetAttribute("type1"))..", item1="..tostring(frame:GetAttribute("item1"))..", ActionButtonUseKeyDown="..tostring(GetCVar and GetCVar("ActionButtonUseKeyDown"))..", clicks="..clicks)
+    elseif cmd=="lock" then DB.locked=true elseif cmd=="unlock" then DB.locked=false elseif cmd=="scale" then DB.scale=tonumber(arg) or DB.scale;frame:SetScale(DB.scale) elseif cmd=="list" then for id in pairs(DB.ignored) do print("Clickables ignored:",id) end elseif cmd=="clear" then if not DB.clearUntil or GetTime()>DB.clearUntil then DB.clearUntil=GetTime()+5;print("Clickables: run /clickables clear again within 5 seconds") else wipe(DB.ignored);DB.clearUntil=nil;print("Clickables: ignore list cleared") end end;rebuild()
 end
 SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
 local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED")
