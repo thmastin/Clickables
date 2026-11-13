@@ -87,7 +87,7 @@ function ns.UpdateView(current, queueLength, db, frame, icon, count, remain, inC
     frame:SetAlpha(1); frame:Show(); icon:SetTexture(ns.GetItemIcon(current.itemID))
     count:SetText(current.count > 1 and current.count or "")
     remain:SetText(queueLength > 1 and ((queueLength - 1) .. " more") or "")
-    local item = current.bag .. " " .. current.slot
+    local item = "item:" .. current.itemID
     frame:SetAttribute("item", item)
     frame:SetAttribute("item1", item)
 end

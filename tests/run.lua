@@ -42,8 +42,10 @@ test("updateView works when GetItemIcon is unavailable",function()
  local remain={SetText=function(_,v)view.remain=v end}
  ns.UpdateView({itemID=42,bag=0,slot=3,count=2},2,{hideWhenEmpty=false},frame,icon,count,remain,false)
  assert(view.texture=="icon-42" and view.attributes.type=="item" and view.attributes.type1=="item")
- assert(view.attributes.item=="0 3" and view.attributes.item1=="0 3")
+ assert(view.attributes.item=="item:42" and view.attributes.item1=="item:42")
  assert(view.count==2 and view.remain=="1 more" and view.shown)
+ ns.UpdateView(nil,0,{hideWhenEmpty=false},frame,icon,count,remain,false)
+ assert(view.attributes.item==nil and view.attributes.item1==nil)
  GetItemIcon,GetItemInfo,C_Item=oldIcon,oldInfo,oldCItem
 end)
 print("PASS "..passed.." tests")
