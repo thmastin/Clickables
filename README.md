@@ -8,7 +8,7 @@ Copy the `Clickables` folder into your Forever client's `Interface\AddOns` direc
 
 ## Options
 
-Find **Clickables** under Game Menu > Options > AddOns. Lock or drag the button, set scale, choose hide or dim when empty, and toggle each supported item type. Alt+right-click an item in Blizzard or EllesmereUI bags, or the current button item, to toggle it on the ignore list. Slash fallback: `/clickables lock`, `/clickables unlock`, `/clickables scale <number>`, `/clickables list`, `/clickables clear` (run twice within five seconds).
+Find **Clickables** under Game Menu > Options > AddOns. Lock or drag the button, set scale, choose hide or dim when empty, and toggle each supported item type. Alt+right-click the Clickables button to toggle its current item on the ignore list. Bag item clicks are left to your bag addons to avoid modifier conflicts. The ignore list shows item icons and names when item data is available. Slash fallback: `/clickables lock`, `/clickables unlock`, `/clickables scale <number>`, `/clickables list`, `/clickables clear` (run twice within five seconds).
 
 The addon targets WoW Forever (`_forever_`, Interface 16001). Locked items are skipped unless a Rogue's Lockpicking skill can be confirmed sufficient; when the requirement cannot be determined, the item is skipped.
 

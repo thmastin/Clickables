@@ -26,8 +26,29 @@ function ns.ToggleIgnore(ignored, itemID)
 end
 
 function ns.GetItemInfo(itemID)
-    if C_Item and C_Item.GetItemInfo then return C_Item.GetItemInfo(itemID) end
+    if C_Item and C_Item.GetItemInfo then
+        local info = C_Item.GetItemInfo(itemID)
+        if info then return info end
+    end
     if GetItemInfo then return GetItemInfo(itemID) end
+end
+
+function ns.GetItemName(itemID)
+    local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)
+    if name then return name end
+    local info = ns.GetItemInfo(itemID)
+    if type(info) == "table" then return info.itemName or info.name end
+    return info
+end
+
+function ns.RequestItemLoad(itemID, callback)
+    if not Item or not Item.CreateFromItemID then return false end
+    local item = Item:CreateFromItemID(itemID)
+    if not item or not item.ContinueOnItemLoad then return false end
+    item:ContinueOnItemLoad(function()
+        if callback then callback(ns.GetItemName(itemID), ns.GetItemIcon(itemID)) end
+    end)
+    return true
 end
 
 function ns.GetItemIcon(itemID)

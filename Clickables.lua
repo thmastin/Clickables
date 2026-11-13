@@ -58,7 +58,11 @@ frame:SetScript("OnDragStart",function(self) if not DB.locked and not InCombatLo
 frame:SetScript("OnDragStop",function(self) self:StopMovingOrSizing(); local p,_,_,x,y=self:GetPoint(); DB.point=p;DB.x=x;DB.y=y end)
 frame:SetScript("PreClick",function(self,button)
     if button=="RightButton" and IsAltKeyDown() and queue[1] and not InCombatLockdown() then
-        ns.ToggleIgnore(DB.ignored,queue[1].itemID)
+        local current=queue[1]
+        local ignored=ns.ToggleIgnore(DB.ignored,current.itemID)
+        local itemName=ns.GetItemName(current.itemID)
+        local itemLink=current.link or (itemName and ("|Hitem:"..current.itemID.."|h["..itemName.."]|h")) or ("item:"..current.itemID)
+        if ignored then print("Clickables: ignored "..itemLink) else print("Clickables: no longer ignoring "..itemLink) end
         rebuild()
     end
 end)
@@ -69,28 +73,11 @@ frame:SetScript("OnEnter",function(self)
     GameTooltip:AddLine("Click to use the next item",0.5,1,0.5); GameTooltip:AddLine("Alt+right-click to ignore",0.5,1,0.5); GameTooltip:Show()
 end)
 frame:SetScript("OnLeave",function() GameTooltip:Hide() end)
-local function toggleBagButton(button)
-    if button.clickablesHooked then return end; button.clickablesHooked=true
-    hooksecurefunc(button,"OnClick",function(self,mouseButton)
-        if mouseButton=="RightButton" and IsAltKeyDown() and not InCombatLockdown() then
-            local bag=self.GetBagID and self:GetBagID() or self.bagID or self.bag
-            local slot=self.GetID and self:GetID() or self.slotID or self:GetID()
-            local info=bag and slot and ns.GetContainerItemInfo(bag,slot)
-            if info and info.itemID then ns.ToggleIgnore(DB.ignored,info.itemID); rebuild() end
-        end
-    end)
-end
-local function hookBlizzard()
-    for _,b in pairs(ContainerFrameItemButton_Cached or {}) do toggleBagButton(b) end
-    for _,f in ipairs({ContainerFrame1,ContainerFrame2,ContainerFrame3,ContainerFrame4,ContainerFrame5}) do if f and f.Items then for _,b in ipairs(f.Items) do toggleBagButton(b) end end end
-end
-local function hookEUI()
-    if EUI_Bags and EUI_Bags.RefreshInventory and not EUI_Bags.clickablesHooked then
-        EUI_Bags.clickablesHooked=true; hooksecurefunc(EUI_Bags,"RefreshInventory",function(self) if not InCombatLockdown() then for _,b in pairs(self.buttons or self.Buttons or {}) do toggleBagButton(b) end end end)
-    end
-    if EUI_BagsReagent and EUI_BagsReagent.RefreshInventory and not EUI_BagsReagent.clickablesHooked then
-        EUI_BagsReagent.clickablesHooked=true; hooksecurefunc(EUI_BagsReagent,"RefreshInventory",function(self) if not InCombatLockdown() then for _,b in pairs(self.buttons or self.Buttons or {}) do toggleBagButton(b) end end end)
-    end
+local function ignoredItemText(itemID)
+    local name=ns.GetItemName(itemID)
+    if name then return "|Hitem:"..itemID.."|h["..name.."]|h" end
+    ns.RequestItemLoad(itemID)
+    return "Item "..itemID
 end
 local function options()
     local panel=CreateFrame("Frame",nil,UIParent); panel.name="Clickables"
@@ -116,11 +103,18 @@ local function options()
     end)
     y=y-28
     for id in pairs(DB.ignored) do
+        local itemID=id
+        local itemIcon=panel:CreateTexture(nil,"ARTWORK")
+        itemIcon:SetSize(18,18); itemIcon:SetPoint("TOPLEFT",18,y-1); itemIcon:SetTexture(ns.GetItemIcon(itemID))
         local row=panel:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-        row:SetPoint("TOPLEFT",18,y); row:SetText("Item "..id)
+        row:SetPoint("TOPLEFT",42,y); row:SetText(ignoredItemText(itemID))
+        ns.RequestItemLoad(itemID,function(name,texture)
+            itemIcon:SetTexture(texture)
+            if name then row:SetText("|Hitem:"..itemID.."|h["..name.."]|h") end
+        end)
         local remove=CreateFrame("Button",nil,panel,"UIPanelButtonTemplate")
         remove:SetSize(64,20); remove:SetPoint("TOPLEFT",180,y+4); remove:SetText("Remove")
-        remove:SetScript("OnClick",function() DB.ignored[id]=nil; rebuild(); row:SetText("Removed") end)
+        remove:SetScript("OnClick",function() DB.ignored[itemID]=nil; rebuild(); row:SetText("Removed") end)
         y=y-24
     end
     if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
@@ -135,14 +129,22 @@ local function slash(msg)
     if cmd=="debug" then
         local clicks=frame.GetRegisteredClicks and table.concat({frame:GetRegisteredClicks()},", ") or "AnyUp, AnyDown (configured)"
         print("Clickables debug: type="..tostring(frame:GetAttribute("type"))..", item="..tostring(frame:GetAttribute("item"))..", type1="..tostring(frame:GetAttribute("type1"))..", item1="..tostring(frame:GetAttribute("item1"))..", ActionButtonUseKeyDown="..tostring(GetCVar and GetCVar("ActionButtonUseKeyDown"))..", clicks="..clicks)
-    elseif cmd=="lock" then DB.locked=true elseif cmd=="unlock" then DB.locked=false elseif cmd=="scale" then DB.scale=tonumber(arg) or DB.scale;frame:SetScale(DB.scale) elseif cmd=="list" then for id in pairs(DB.ignored) do print("Clickables ignored:",id) end elseif cmd=="clear" then if not DB.clearUntil or GetTime()>DB.clearUntil then DB.clearUntil=GetTime()+5;print("Clickables: run /clickables clear again within 5 seconds") else wipe(DB.ignored);DB.clearUntil=nil;print("Clickables: ignore list cleared") end end;rebuild()
+    elseif cmd=="lock" then DB.locked=true elseif cmd=="unlock" then DB.locked=false elseif cmd=="scale" then DB.scale=tonumber(arg) or DB.scale;frame:SetScale(DB.scale) elseif cmd=="list" then
+        for id in pairs(DB.ignored) do
+            local itemID=id
+            local name=ns.GetItemName(itemID)
+            local link=name and ("|Hitem:"..itemID.."|h["..name.."]|h") or ("item:"..itemID)
+            print("Clickables ignored: |T"..tostring(ns.GetItemIcon(itemID) or 134400)..":16|t "..link)
+            if not name then ns.RequestItemLoad(itemID,function(loadedName,texture) if loadedName then print("Clickables ignored: |T"..tostring(texture or 134400)..":16|t |Hitem:"..itemID.."|h["..loadedName.."]|h") end end) end
+        end
+    elseif cmd=="clear" then if not DB.clearUntil or GetTime()>DB.clearUntil then DB.clearUntil=GetTime()+5;print("Clickables: run /clickables clear again within 5 seconds") else wipe(DB.ignored);DB.clearUntil=nil;print("Clickables: ignore list cleared") end end;rebuild()
 end
 SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
 local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED")
 events:SetScript("OnEvent",function(_,event,name)
-    if event=="ADDON_LOADED" and name==addonName then DB=ns.MergeDefaults(ClickablesDB);ClickablesDB=DB;position();options();hookBlizzard();hookEUI();rebuild()
-    elseif event=="PLAYER_REGEN_ENABLED" then rebuild();hookBlizzard();hookEUI()
-    elseif event=="BAG_UPDATE_DELAYED" or event=="PLAYER_ENTERING_WORLD" or event=="QUEST_ACCEPTED" then rebuild();hookBlizzard();hookEUI() end
+    if event=="ADDON_LOADED" and name==addonName then DB=ns.MergeDefaults(ClickablesDB);ClickablesDB=DB;position();options();rebuild()
+    elseif event=="PLAYER_REGEN_ENABLED" then rebuild()
+    elseif event=="BAG_UPDATE_DELAYED" or event=="PLAYER_ENTERING_WORLD" or event=="QUEST_ACCEPTED" then rebuild() end
 end)
 
 

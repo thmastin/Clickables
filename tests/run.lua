@@ -23,6 +23,13 @@ end)
 test("ignore toggling",function()
  local ignored={};assert(ns.ToggleIgnore(ignored,9)==true and ignored[9]);assert(ns.ToggleIgnore(ignored,9)==false and not ignored[9])
 end)
+test("ignored item names prefer C_Item and fall back to GetItemInfo",function()
+ local oldCItem,oldInfo=C_Item,GetItemInfo
+ C_Item={GetItemNameByID=function(id) if id==12 then return "Known item" end end}
+ GetItemInfo=function() return "Fallback item" end
+ assert(ns.GetItemName(12)=="Known item" and ns.GetItemName(13)=="Fallback item")
+ C_Item,GetItemInfo=oldCItem,oldInfo
+end)
 test("updateView works when GetItemIcon is unavailable",function()
  local oldIcon,oldInfo,oldCItem=GetItemIcon,GetItemInfo,C_Item
  GetItemIcon=nil; C_Item=nil
