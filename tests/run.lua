@@ -23,4 +23,29 @@ end)
 test("ignore toggling",function()
  local ignored={};assert(ns.ToggleIgnore(ignored,9)==true and ignored[9]);assert(ns.ToggleIgnore(ignored,9)==false and not ignored[9])
 end)
+test("ignored item names prefer C_Item and fall back to GetItemInfo",function()
+ local oldCItem,oldInfo=C_Item,GetItemInfo
+ C_Item={GetItemNameByID=function(id) if id==12 then return "Known item" end end}
+ GetItemInfo=function() return "Fallback item" end
+ assert(ns.GetItemName(12)=="Known item" and ns.GetItemName(13)=="Fallback item")
+ C_Item,GetItemInfo=oldCItem,oldInfo
+end)
+test("updateView works when GetItemIcon is unavailable",function()
+ local oldIcon,oldInfo,oldCItem=GetItemIcon,GetItemInfo,C_Item
+ GetItemIcon=nil; C_Item=nil
+ GetItemInfo=function(id) return "Item",nil,nil,nil,nil,nil,nil,nil,nil,"icon-"..id end
+ local view={texture=nil,text=nil,attributes={},alpha=nil,shown=false}
+ local frame={SetAlpha=function(_,v)view.alpha=v end,Show=function()view.shown=true end,
+  Hide=function()view.shown=false end,SetAttribute=function(_,k,v)view.attributes[k]=v end}
+ local icon={SetTexture=function(_,v)view.texture=v end}
+ local count={SetText=function(_,v)view.count=v end}
+ local remain={SetText=function(_,v)view.remain=v end}
+ ns.UpdateView({itemID=42,bag=0,slot=3,count=2},2,{hideWhenEmpty=false},frame,icon,count,remain,false)
+ assert(view.texture=="icon-42" and view.attributes.type=="item" and view.attributes.type1=="item")
+ assert(view.attributes.item=="item:42" and view.attributes.item1=="item:42")
+ assert(view.count==2 and view.remain=="1 more" and view.shown)
+ ns.UpdateView(nil,0,{hideWhenEmpty=false},frame,icon,count,remain,false)
+ assert(view.attributes.item==nil and view.attributes.item1==nil)
+ GetItemIcon,GetItemInfo,C_Item=oldIcon,oldInfo,oldCItem
+end)
 print("PASS "..passed.." tests")
