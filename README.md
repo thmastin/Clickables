@@ -31,3 +31,5 @@ Releases are tagged only after in-game checks. GitHub Actions builds releases wi
 - **v1.1:** scrolls and elixirs with buff-rank checks.
 - **v1.2:** food, with a Well Fed check through Shift-click.
 - Later: low-health bandage and healthstone suggestions (off by default).
+
+Initial implementation details are tracked in the feature branch.
