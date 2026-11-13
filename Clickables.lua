@@ -122,7 +122,12 @@ local function options()
         remove:SetScript("OnClick",function() DB.ignored[id]=nil; rebuild(); row:SetText("Removed") end)
         y=y-24
     end
-    InterfaceOptions_AddCategory(panel)
+    if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+        local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
+        Settings.RegisterAddOnCategory(category)
+    elseif InterfaceOptions_AddCategory then
+        InterfaceOptions_AddCategory(panel)
+    end
 end
 local function slash(msg)
     local cmd,arg=msg:match("^(%S*)%s*(.-)$");cmd=cmd:lower()
