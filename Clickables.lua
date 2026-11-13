@@ -54,6 +54,13 @@ local function rebuild()
     ns.SortQueue(queue); updateView()
 end
 local function position()
+    if DB.positionVersion ~= 2 then
+        if DB.x == 0 and DB.y == -120 then
+            DB.x = -UIParent:GetWidth() / 4
+            DB.y = 0
+        end
+        DB.positionVersion = 2
+    end
     frame:ClearAllPoints(); frame:SetPoint(DB.point or "CENTER",UIParent,DB.point or "CENTER",DB.x or 0,DB.y or -120); frame:SetScale(DB.scale or 1)
 end
 frame:SetScript("OnDragStart",function(self) if not DB.locked and not InCombatLockdown() then self:StartMoving() end end)
