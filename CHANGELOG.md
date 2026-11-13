@@ -2,6 +2,13 @@
 
 All notable changes to Clickables are documented here.
 
+## [1.1.0] - 2026-11-13
+
+### Added
+- Scroll and elixir queue categories with options toggles, buff checks, class/spec filtering, and a class override.
+- Throttled safe-call error reporting, a ten-entry error history, `/clickables errors`, and debug stack output.
+- Queue explanations in the button tooltip and tests for priorities, filters, buff ranks, elixir conflicts, and error handling.
+
 ## [1.0.0] - 2026-11-13
 
 ### Added
