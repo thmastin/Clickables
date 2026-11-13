@@ -27,30 +27,21 @@ local function getText(itemID)
     scan:Hide(); return open,quest,locked
 end
 local function itemData(bag,slot)
-    local info=C_Container.GetContainerItemInfo(bag,slot)
+    local info=ns.GetContainerItemInfo(bag,slot)
     if not info or not info.itemID then return end
     local open,quest,locked=getText(info.itemID)
-    local itemInfo=C_Item.GetItemInfo(info.itemID)
+    local itemInfo=ns.GetItemInfo(info.itemID)
     local loot=info.hasLoot or info.isLootable or (itemInfo and (itemInfo.hasLoot or itemInfo.isLootable))
     local kind=ns.Classify({itemID=info.itemID,lootable=loot,tooltipOpenable=open,allowlisted=ns.OpenableItemIDs[info.itemID],quest=quest,locked=locked},DB)
-    if kind then return {bag=bag,slot=slot,itemID=info.itemID,kind=kind,count=info.stackCount or 1,link=C_Container.GetContainerItemLink(bag,slot)} end
+    if kind then return {bag=bag,slot=slot,itemID=info.itemID,kind=kind,count=info.stackCount or 1,link=ns.GetContainerItemLink(bag,slot)} end
 end
 local function updateView()
-    local current=queue[1]
-    if InCombatLockdown() then return end
-    if not current then
-        frame:SetAttribute("item",nil); icon:SetTexture(nil); count:SetText(""); remain:SetText("")
-        if DB.hideWhenEmpty then frame:Hide() else frame:SetAlpha(0.35); frame:Show() end
-        return
-    end
-    frame:SetAlpha(1); frame:Show(); icon:SetTexture(GetItemIcon(current.itemID)); count:SetText(current.count>1 and current.count or "")
-    remain:SetText(#queue>1 and ((#queue-1).." more") or "")
-    frame:SetAttribute("item",bagName(current.bag,current.slot))
+    ns.UpdateView(queue[1], #queue, DB, frame, icon, count, remain, InCombatLockdown())
 end
 local function rebuild()
     if InCombatLockdown() then return end
     wipe(queue)
-    for bag=0,NUM_BAG_SLOTS do for slot=1,C_Container.GetContainerNumSlots(bag) do local d=itemData(bag,slot); if d then queue[#queue+1]=d end end end
+    for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local d=itemData(bag,slot); if d then queue[#queue+1]=d end end end
     ns.SortQueue(queue); updateView()
 end
 local function position()
@@ -73,7 +64,11 @@ frame:SetScript("OnEnter",function(self)
     GameTooltip:AddLine("Click to use the next item",0.5,1,0.5); GameTooltip:AddLine("Alt+right-click to ignore",0.5,1,0.5); GameTooltip:Show()
 end)
 frame:SetScript("OnLeave",function() GameTooltip:Hide() end)
-function UseNextClickable() if queue[1] and not InCombatLockdown() then UseContainerItem(queue[1].bag,queue[1].slot) end end
+local function useContainerItem(bag, slot)
+    if C_Container and C_Container.UseContainerItem then return C_Container.UseContainerItem(bag, slot) end
+    if UseContainerItem then return UseContainerItem(bag, slot) end
+end
+function UseNextClickable() if queue[1] and not InCombatLockdown() then useContainerItem(queue[1].bag,queue[1].slot) end end
 
 local function toggleBagButton(button)
     if button.clickablesHooked then return end; button.clickablesHooked=true
@@ -81,7 +76,7 @@ local function toggleBagButton(button)
         if mouseButton=="RightButton" and IsAltKeyDown() and not InCombatLockdown() then
             local bag=self.GetBagID and self:GetBagID() or self.bagID or self.bag
             local slot=self.GetID and self:GetID() or self.slotID or self:GetID()
-            local info=bag and slot and C_Container.GetContainerItemInfo(bag,slot)
+            local info=bag and slot and ns.GetContainerItemInfo(bag,slot)
             if info and info.itemID then ns.ToggleIgnore(DB.ignored,info.itemID); rebuild() end
         end
     end)

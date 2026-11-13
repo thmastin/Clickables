@@ -23,4 +23,18 @@ end)
 test("ignore toggling",function()
  local ignored={};assert(ns.ToggleIgnore(ignored,9)==true and ignored[9]);assert(ns.ToggleIgnore(ignored,9)==false and not ignored[9])
 end)
+test("updateView works when GetItemIcon is unavailable",function()
+ local oldIcon,oldInfo,oldCItem=GetItemIcon,GetItemInfo,C_Item
+ GetItemIcon=nil; C_Item=nil
+ GetItemInfo=function(id) return "Item",nil,nil,nil,nil,nil,nil,nil,nil,"icon-"..id end
+ local view={texture=nil,text=nil,attribute=nil,alpha=nil,shown=false}
+ local frame={SetAlpha=function(_,v)view.alpha=v end,Show=function()view.shown=true end,
+  Hide=function()view.shown=false end,SetAttribute=function(_,k,v)view.attribute=v end}
+ local icon={SetTexture=function(_,v)view.texture=v end}
+ local count={SetText=function(_,v)view.count=v end}
+ local remain={SetText=function(_,v)view.remain=v end}
+ ns.UpdateView({itemID=42,bag=0,slot=3,count=2},2,{hideWhenEmpty=false},frame,icon,count,remain,false)
+ assert(view.texture=="icon-42" and view.attribute=="0 3" and view.count==2 and view.remain=="1 more" and view.shown)
+ GetItemIcon,GetItemInfo,C_Item=oldIcon,oldInfo,oldCItem
+end)
 print("PASS "..passed.." tests")

@@ -25,6 +25,47 @@ function ns.ToggleIgnore(ignored, itemID)
     return ignored[itemID] == true
 end
 
+function ns.GetItemInfo(itemID)
+    if C_Item and C_Item.GetItemInfo then return C_Item.GetItemInfo(itemID) end
+    if GetItemInfo then return GetItemInfo(itemID) end
+end
+
+function ns.GetItemIcon(itemID)
+    return (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(itemID))
+        or (GetItemIcon and GetItemIcon(itemID))
+        or (GetItemInfo and select(10, GetItemInfo(itemID)))
+        or 134400
+end
+
+function ns.GetContainerItemInfo(bag, slot)
+    if C_Container and C_Container.GetContainerItemInfo then return C_Container.GetContainerItemInfo(bag, slot) end
+    if GetContainerItemInfo then return GetContainerItemInfo(bag, slot) end
+end
+
+function ns.GetContainerItemLink(bag, slot)
+    if C_Container and C_Container.GetContainerItemLink then return C_Container.GetContainerItemLink(bag, slot) end
+    if GetContainerItemLink then return GetContainerItemLink(bag, slot) end
+end
+
+function ns.GetContainerNumSlots(bag)
+    if C_Container and C_Container.GetContainerNumSlots then return C_Container.GetContainerNumSlots(bag) end
+    if GetContainerNumSlots then return GetContainerNumSlots(bag) end
+    return 0
+end
+
+function ns.UpdateView(current, queueLength, db, frame, icon, count, remain, inCombat)
+    if inCombat then return end
+    if not current then
+        frame:SetAttribute("item", nil); icon:SetTexture(nil); count:SetText(""); remain:SetText("")
+        if db.hideWhenEmpty then frame:Hide() else frame:SetAlpha(0.35); frame:Show() end
+        return
+    end
+    frame:SetAlpha(1); frame:Show(); icon:SetTexture(ns.GetItemIcon(current.itemID))
+    count:SetText(current.count > 1 and current.count or "")
+    remain:SetText(queueLength > 1 and ((queueLength - 1) .. " more") or "")
+    frame:SetAttribute("item", current.bag .. " " .. current.slot)
+end
+
 function ns.Classify(item, settings)
     settings = settings or ns.Defaults
     if not item or not item.itemID or (settings.ignored and settings.ignored[item.itemID]) or item.locked then return nil end
