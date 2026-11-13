@@ -1,0 +1,3 @@
+<Bindings>
+  <Binding name="CLICKABLES_USE_NEXT" header="CLICKABLES">UseNextClickable()</Binding>
+</Bindings>

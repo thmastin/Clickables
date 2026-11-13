@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: Clickables
+## Notes: Secure button for the next item to click
+## Version: 1.0.0
+## SavedVariables: ClickablesDB
+
+ClickablesCore.lua
+Clickables.lua
+Bindings.xml

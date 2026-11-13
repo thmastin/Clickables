@@ -1,0 +1,1 @@
+package-as: Clickablesmanual-changelog:  filename: CHANGELOG.md  markup-type: markdownignore:  - .git/  - .github/  - .gitignore  - .pkgmeta  - README.md  - tests/  - media/*.png
