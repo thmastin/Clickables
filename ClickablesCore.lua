@@ -3,6 +3,11 @@ ns = ns or {}
 
 ns.Defaults = { point="CENTER", x=0, y=-120, scale=1, locked=false, hideWhenEmpty=false,
     openables=true, questStarters=true, ignored={} }
+ns.OpenableItemIDs = {
+    [5523]=true, [5524]=true, [5525]=true, [5526]=true, -- clams
+    [16882]=true, [16883]=true, [16884]=true, [16885]=true, -- junkboxes
+    [5758]=true, [5759]=true, [5760]=true, [5761]=true, -- lockboxes
+}
 
 function ns.MergeDefaults(db, defaults)
     db = type(db) == "table" and db or {}

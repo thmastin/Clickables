@@ -7,7 +7,7 @@ frame:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"}); frame:SetBackdropCol
 local icon=frame:CreateTexture(nil,"ARTWORK"); icon:SetAllPoints(); frame.icon=icon
 local count=frame:CreateFontString(nil,"OVERLAY","NumberFontNormal"); count:SetPoint("BOTTOMRIGHT",-1,1); frame.count=count
 local remain=frame:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); remain:SetPoint("TOP",frame,"BOTTOM",0,-2); frame.remain=remain
-local function bagName(bag,slot) return bag.." slot "..slot end
+local function bagName(bag,slot) return bag.." "..slot end
 local function getText(itemID)
     local scan=CreateFrame("GameTooltip", "ClickablesScanTooltip", nil, "GameTooltipTemplate")
     scan:SetOwner(UIParent,"ANCHOR_NONE"); scan:SetItemByID(itemID)
@@ -30,7 +30,7 @@ local function itemData(bag,slot)
     local open,quest,locked=getText(info.itemID)
     local itemInfo=C_Item.GetItemInfo(info.itemID)
     local loot=info.hasLoot or info.isLootable or (itemInfo and (itemInfo.hasLoot or itemInfo.isLootable))
-    local kind=ns.Classify({itemID=info.itemID,lootable=loot,tooltipOpenable=open,quest=quest,locked=locked},DB)
+    local kind=ns.Classify({itemID=info.itemID,lootable=loot,tooltipOpenable=open,allowlisted=ns.OpenableItemIDs[info.itemID],quest=quest,locked=locked},DB)
     if kind then return {bag=bag,slot=slot,itemID=info.itemID,kind=kind,count=info.stackCount or 1,link=C_Container.GetContainerItemLink(bag,slot)} end
 end
 local function updateView()
