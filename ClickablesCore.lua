@@ -140,6 +140,19 @@ end
 function ns.GetContainerItemInfo(bag,slot)
     if C_Container and C_Container.GetContainerItemInfo then return C_Container.GetContainerItemInfo(bag,slot) end; if GetContainerItemInfo then return GetContainerItemInfo(bag,slot) end
 end
+function ns.GetContainerItemQuestInfo(bag,slot)
+    local isQuestItem,questID,isActive
+    if C_Container and C_Container.GetContainerItemQuestInfo then
+        isQuestItem,questID,isActive=C_Container.GetContainerItemQuestInfo(bag,slot)
+    elseif GetContainerItemQuestInfo then
+        isQuestItem,questID,isActive=GetContainerItemQuestInfo(bag,slot)
+    else
+        return nil
+    end
+    if type(isQuestItem)=="table" then return isQuestItem end
+    if isQuestItem==nil and questID==nil and isActive==nil then return nil end
+    return {isQuestItem=isQuestItem,questID=questID,isActive=isActive}
+end
 function ns.GetContainerItemLink(bag,slot)
     if C_Container and C_Container.GetContainerItemLink then return C_Container.GetContainerItemLink(bag,slot) end; if GetContainerItemLink then return GetContainerItemLink(bag,slot) end
 end
@@ -159,6 +172,20 @@ function ns.Classify(item,settings)
     if item.quest and settings.questStarters then return "quest" end
     if (item.lootable or item.tooltipOpenable or item.allowlisted) and settings.openables then return "openable" end
     return nil
+end
+function ns.NewQuestLogState()
+    return {ready=false}
+end
+function ns.MarkQuestLogReady(state)
+    state.ready=true
+end
+function ns.QuestDecision(questInfo,tooltipQuest,state)
+    local questID=questInfo and questInfo.questID
+    if not questID then return tooltipQuest==true end
+    if questInfo.isActive then return false end
+    state=state or {}
+    if state.onQuest or state.completed or not state.ready then return false end
+    return true
 end
 function ns.SortQueue(items)
     local priority={quest=1,openable=2,elixir=3,scroll=4,food=5}

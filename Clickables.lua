@@ -1,6 +1,7 @@
 local addonName, ns = ...
 local ADDON, DB, queue = "Clickables", nil, {}
 local errorState=ns.NewErrorState()
+local questLogState=ns.NewQuestLogState()
 local function safe(label,fn) return function(...)
     local args={...}
     return ns.SafeCall(errorState,label,function() return fn(unpack(args)) end,GetTime and GetTime() or 0,print)
@@ -78,10 +79,19 @@ end
 local function itemData(bag,slot)
     local info=ns.GetContainerItemInfo(bag,slot)
     if not info or not info.itemID then return end
+    local questInfo=ns.GetContainerItemQuestInfo(bag,slot)
     local open,quest,locked,use=getText(info.itemID)
     local itemInfo=ns.GetItemInfo(info.itemID)
     local loot=info.hasLoot or info.isLootable or (itemInfo and (itemInfo.hasLoot or itemInfo.isLootable))
-    local kind=ns.Classify({itemID=info.itemID,lootable=loot,tooltipOpenable=open,allowlisted=ns.OpenableItemIDs[info.itemID],quest=quest,locked=locked},DB)
+    local questID=questInfo and questInfo.questID
+    local questStatus={ready=questLogState.ready}
+    if questID then
+        questStatus.onQuest=C_QuestLog and C_QuestLog.IsOnQuest and C_QuestLog.IsOnQuest(questID) or false
+        questStatus.completed=(C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted and C_QuestLog.IsQuestFlaggedCompleted(questID))
+            or (IsQuestFlaggedCompleted and IsQuestFlaggedCompleted(questID)) or false
+    end
+    local startsQuest=ns.QuestDecision(questInfo,quest,questStatus)
+    local kind=ns.Classify({itemID=info.itemID,lootable=loot,tooltipOpenable=open,allowlisted=ns.OpenableItemIDs[info.itemID],quest=startsQuest,locked=locked},DB)
     local data={bag=bag,slot=slot,itemID=info.itemID,count=info.stackCount or 1,link=ns.GetContainerItemLink(bag,slot)}
     local sd=ns.ScrollItemIDs[info.itemID]; local ed=ns.ElixirItemIDs[info.itemID]
     -- The checked-in IDs come from the installed Forever LibForeverData list;
@@ -115,7 +125,7 @@ local function itemData(bag,slot)
             if category and not ns.ElixirConflict(auras(),category) and ns.ClassAllows(select(2,UnitClass("player")),playerSpec(),stat,DB.classFilterOverride) then data.kind="elixir";data.reason=(knownName or "Elixir")..", no "..category.." elixir active" end
         end
     end
-    if kind then data.kind=kind end
+    if kind then data.kind=kind;if kind=="quest" then data.reason="Starts a quest you don't have" end end
     if data.kind then return data end
 end
 local function updateView()
@@ -257,13 +267,14 @@ end
 local slash=safe("slash command",slashImpl)
 SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
 local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED");events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-events:RegisterEvent("UNIT_AURA")
+events:RegisterEvent("UNIT_AURA");events:RegisterEvent("QUEST_LOG_UPDATE");events:RegisterEvent("QUEST_REMOVED")
 events:SetScript("OnEvent",safe("event handler",function(_,event,name)
     if event=="GET_ITEM_INFO_RECEIVED" then if refreshIgnoredList then refreshIgnoredList() end
     elseif event=="ADDON_LOADED" and name==addonName then DB=ns.MergeDefaults(ClickablesDB);ClickablesDB=DB;position();options();rebuild()
     elseif event=="PLAYER_REGEN_ENABLED" then rebuild()
     elseif event=="UNIT_AURA" and name=="player" and not InCombatLockdown() then rebuild()
-    elseif event=="BAG_UPDATE_DELAYED" or event=="PLAYER_ENTERING_WORLD" or event=="QUEST_ACCEPTED" then rebuild() end
+    elseif event=="QUEST_LOG_UPDATE" or event=="QUEST_ACCEPTED" or event=="QUEST_REMOVED" then ns.MarkQuestLogReady(questLogState);rebuild()
+    elseif event=="BAG_UPDATE_DELAYED" or event=="PLAYER_ENTERING_WORLD" then rebuild() end
 end))
 
 
