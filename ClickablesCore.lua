@@ -8,6 +8,10 @@ ns.OpenableItemIDs = {
     [16882]=true, [16883]=true, [16884]=true, [16885]=true,
     [5758]=true, [5759]=true, [5760]=true, [5761]=true,
 }
+ns.FoodItemIDs = {
+    [2888]={name="Beer Basted Boar Ribs",stat="strength",bonus=1},
+    [6290]={name="Brilliant Smallfish",stat="attack_power",bonus=2},
+}
 -- Vanilla scroll IDs and their increasing buff ranks.
 ns.ScrollItemIDs = {
     [954]={stat="strength",rank=1,name="Scroll of Strength I"}, [2289]={stat="strength",rank=2,name="Scroll of Strength II"}, [4426]={stat="strength",rank=3,name="Scroll of Strength III"}, [10310]={stat="strength",rank=4,name="Scroll of Strength IV"},
@@ -35,12 +39,12 @@ ns.ElixirItemIDs = {
 }
 -- Centralized tuning table for class/spec eligibility.
 ns.ClassScrollRules = {
-    WARRIOR={allow={stamina=true,armor=true,strength=true,agility=true}}, ROGUE={allow={stamina=true,armor=true,strength=true,agility=true}},
+    WARRIOR={allow={stamina=true,armor=true,strength=true,agility=true,attack_power=true}}, ROGUE={allow={stamina=true,armor=true,strength=true,agility=true,attack_power=true}},
     MAGE={allow={stamina=true,armor=true,intellect=true,spirit=true}}, WARLOCK={allow={stamina=true,armor=true,intellect=true,spirit=true}}, PRIEST={allow={stamina=true,armor=true,intellect=true,spirit=true}},
-    HUNTER={allow={stamina=true,armor=true,agility=true,intellect=true}},
-    PALADIN={casterTabs={[1]=true},melee={strength=true,agility=true,stamina=true,armor=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
-    SHAMAN={casterTabs={[1]=true,[3]=true},melee={strength=true,agility=true,stamina=true,armor=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
-    DRUID={casterTabs={[3]=true},melee={strength=true,agility=true,stamina=true,armor=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
+    HUNTER={allow={stamina=true,armor=true,agility=true,intellect=true,attack_power=true}},
+    PALADIN={casterTabs={[1]=true},melee={strength=true,agility=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
+    SHAMAN={casterTabs={[1]=true,[3]=true},melee={strength=true,agility=true,intellect=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
+    DRUID={casterTabs={[3]=true},melee={strength=true,agility=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
 }
 function ns.NewErrorState()
     return {errors={},last={},debug=false}
@@ -69,6 +73,14 @@ function ns.ClassAllows(class, spec, stat, override)
     if rule.melee then allowed=(spec=="melee" and rule.melee) or (spec=="caster" and rule.caster) end
     return not allowed or allowed[stat] == true
 end
+function ns.DominantTalentTab(points)
+    local best,bestPoints
+    for tab=1,3 do
+        local value=points and points[tab]
+        if value and value>0 and (not bestPoints or value>bestPoints) then best,bestPoints=tab,value end
+    end
+    return best
+end
 function ns.ActiveRank(auras, stat)
     local rank=0
     for _,a in ipairs(auras or {}) do if a.stat==stat and (a.rank or 1)>rank then rank=a.rank or 1 end end
@@ -88,18 +100,24 @@ end
 function ns.FoodTooltip(use)
     if not use then return nil end
     local lower=use:lower()
-    local capitalized=use:find("Well Fed",1,true)~=nil
-    local eatThenBuff=lower:find("well fed",1,true)~=nil and lower:find("seconds",1,true)~=nil
-    if not capitalized and not eatThenBuff then return nil end
-    local stats={"stamina","intellect","spirit","strength","agility"}
+    if not lower:find("well fed",1,true) then return nil end
+    local stats={"stamina","intellect","spirit","strength","agility","attack power"}
     local found={}
     for _,stat in ipairs(stats) do
         local n=lower:match("([%d%.]+)%s+"..stat) or lower:match(stat.."%s+by%s+([%d%.]+)")
-        if n then found[#found+1]={stat=stat,bonus=tonumber(n) or 0} end
+        if n then found[#found+1]={stat=stat=="attack power" and "attack_power" or stat,bonus=tonumber(n) or 0} end
     end
     local bonus=0
     for _,entry in ipairs(found) do if entry.bonus>bonus then bonus=entry.bonus end end
     return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil)}
+end
+function ns.JoinTooltipLines(lines)
+    return table.concat(lines or {}," ")
+end
+function ns.FoodCandidate(itemID,use)
+    if ns.FoodItemIDs[itemID] then return true end
+    local lower=(use or ""):lower()
+    return lower:find("eat",1,true)~=nil or lower:find("well fed",1,true)~=nil
 end
 function ns.FoodEligible(food,class,spec,override)
     if not food or not food.stats or #food.stats==0 then return true end

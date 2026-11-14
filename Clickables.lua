@@ -19,24 +19,32 @@ local function bagName(bag,slot) return bag.." "..slot end
 local function getText(itemID)
     local scan=CreateFrame("GameTooltip", "ClickablesScanTooltip", nil, "GameTooltipTemplate")
     scan:SetOwner(UIParent,"ANCHOR_NONE"); scan:SetItemByID(itemID)
-    local open,quest,locked,use=false,false,false
+    local open,quest,locked=false,false,false
+    local useParts,inUse={},false
     local openText=ITEM_OPENABLE or "Right Click to Open"; local questText=ITEM_STARTS_QUEST or "This Item Begins a Quest"
     for i=1,scan:NumLines() do
         local line=_G["ClickablesScanTooltipTextLeft"..i]
         local s=line and line:GetText()
         if s then
+            local useStart=s:find("Use:",1,true)
+            if useStart then
+                inUse=true
+                useParts[#useParts+1]=s:sub(useStart+4)
+            elseif inUse then
+                useParts[#useParts+1]=s
+            end
             if s:find(openText,1,true) or s:find("Right Click to Open",1,true) then open=true end
             if s:find(questText,1,true) or s:find("This Item Begins a Quest",1,true) then quest=true end
             if s:find(ITEM_LOCKED or "Locked",1,true) then locked=true end
-            if s:find("Use:",1,true) then use=s end
         end
     end
-    scan:Hide(); return open,quest,locked,use
+    scan:Hide(); return open,quest,locked,#useParts>0 and ns.JoinTooltipLines(useParts) or nil
 end
 local function playerSpec()
     if not GetTalentTabInfo then return nil end
-    local best,bestPoints
-    for tab=1,3 do local _,_,points=GetTalentTabInfo(tab); if points and (not bestPoints or points>bestPoints) then best,bestPoints=tab,points end end
+    local points={}
+    for tab=1,3 do local _,_,spent=GetTalentTabInfo(tab);points[tab]=spent end
+    local best=ns.DominantTalentTab(points)
     if not best then return nil end
     local _,class=UnitClass("player")
     local rule=ns.ClassScrollRules[class]
@@ -81,6 +89,11 @@ local function itemData(bag,slot)
     if not info or not info.itemID then return end
     local questInfo=ns.GetContainerItemQuestInfo(bag,slot)
     local open,quest,locked,use=getText(info.itemID)
+    local foodCandidate=ns.FoodCandidate(info.itemID,use)
+    if DB.ignored and DB.ignored[info.itemID] then
+        if errorState.debug and foodCandidate then print("Clickables food "..(ns.GetItemName(info.itemID) or tostring(info.itemID)).." ("..info.itemID.." at "..bagName(bag,slot).."): ignored") end
+        return nil
+    end
     local itemInfo=ns.GetItemInfo(info.itemID)
     local loot=info.hasLoot or info.isLootable or (itemInfo and (itemInfo.hasLoot or itemInfo.isLootable))
     local questID=questInfo and questInfo.questID
@@ -105,7 +118,23 @@ local function itemData(bag,slot)
         if knownName~=expected then sd=nil end
     end
     local food=ns.FoodTooltip(use)
-    if food and DB.food and not ns.FoodAuraActive(auras()) and ns.FoodEligible(food,select(2,UnitClass("player")),playerSpec(),DB.classFilterOverride) then
+    local mappedFood=ns.FoodItemIDs[info.itemID]
+    if not food and mappedFood then food={stats={{stat=mappedFood.stat,bonus=mappedFood.bonus}},bonus=mappedFood.bonus,stat=mappedFood.stat} end
+    local foodActive,foodAllowed=false,true
+    if foodCandidate then
+        foodActive=ns.FoodAuraActive(auras())
+        if food then foodAllowed=ns.FoodEligible(food,select(2,UnitClass("player")),playerSpec(),DB.classFilterOverride) end
+        if errorState.debug then
+            local skipReason
+            if not food then skipReason="no Well Fed text"
+            elseif foodActive then skipReason="Well Fed/eating aura active"
+            elseif not foodAllowed then skipReason="class filter"
+            elseif not DB.food then skipReason="Food disabled"
+            else skipReason="eligible" end
+            print("Clickables food "..(ns.GetItemName(info.itemID) or tostring(info.itemID)).." ("..info.itemID.." at "..bagName(bag,slot).."): "..skipReason)
+        end
+    end
+    if food and DB.food and not foodActive and foodAllowed then
         data.kind="food";data.bonus=food.bonus;data.reason="No Well Fed buff"
     elseif sd and DB.scrolls then
         local best=sd.rank
@@ -136,7 +165,14 @@ local function rebuild()
     local fresh={}
     for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local d=itemData(bag,slot); if d then fresh[#fresh+1]=d end end end
     local foods={};for i=#fresh,1,-1 do if fresh[i].kind=="food" then foods[#foods+1]=table.remove(fresh,i) end end
-    local best=ns.BestFood(foods);if best then fresh[#fresh+1]=best end
+    local best=ns.BestFood(foods)
+    if errorState.debug then
+        for _,food in ipairs(foods) do
+            local status=food==best and "selected" or "not best eligible food"
+            print("Clickables food "..(ns.GetItemName(food.itemID) or tostring(food.itemID)).." ("..food.itemID.." at "..bagName(food.bag,food.slot).."): "..status)
+        end
+    end
+    if best then fresh[#fresh+1]=best end
     ns.SortQueue(fresh);queue=fresh;updateView()
 end
 local function position()
