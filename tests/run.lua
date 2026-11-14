@@ -182,13 +182,53 @@ test("elixir aura uses spell ID or exact fallback",function()
  assert(not ns.ElixirConflict({{category="battle"}},"battle"))
 end)
 test("Forever elixir aura spell IDs",function()
- local expected={[2454]=2367,[5997]=7183,[3389]=3220,[3390]=3160,[3383]=3166,[3825]=3450,[8949]=11328,[9179]=11396,[9206]=11405,[13452]=17571,[9187]=11334,[8951]=11450}
- for itemID,spellID in pairs(expected) do assert(ns.ElixirItemIDs[itemID].auraSpellID==spellID,"elixir aura ID mismatch for "..itemID) end
- for itemID,record in pairs(ns.ElixirItemIDs) do assert(expected[itemID]==record.auraSpellID,"unexpected elixir record "..itemID) end
+ local expected={
+  {2454,2367,"https://www.wowhead.com/classic/spell=2367/lions-strength"}, -- Lion's Strength
+  {5997,673,"https://www.wowhead.com/classic/spell=673/armor"}, -- Minor Defense
+  {3389,3220,"https://www.wowhead.com/classic/spell=3220/defense"}, -- Defense
+  {3390,3160,"https://www.wowhead.com/classic/spell=3160/lesser-agility"}, -- Lesser Agility
+  {3383,3166,"https://www.wowhead.com/classic/spell=3166/wisdom"}, -- Wisdom
+  {3825,3593,"https://www.wowhead.com/classic/spell=3593/fortitude"}, -- Fortitude
+  {8949,11328,"https://www.wowhead.com/classic/spell=11328/agility"}, -- Agility
+  {9179,11396,"https://www.wowhead.com/classic/spell=11396/greater-intellect"}, -- Greater Intellect
+  {9206,11405,"https://www.wowhead.com/classic/spell=11405/giants"}, -- Giants
+  {13452,17538,"https://www.wowhead.com/classic/spell=17538/mongoose"}, -- Mongoose
+  {9187,11334,"https://www.wowhead.com/classic/spell=11334/greater-agility"}, -- Greater Agility
+  {8951,11349,"https://www.wowhead.com/classic/spell=11349/greater-defense"}, -- Greater Defense
+ }
+ assert(#expected==12)
+ for _,ref in ipairs(expected) do assert(ns.ElixirItemIDs[ref[1]].auraSpellID==ref[2],"elixir aura ID mismatch: "..ref[3]) end
+ local total=0;for _ in pairs(ns.ElixirItemIDs) do total=total+1 end;assert(total==#expected)
 end)
 test("scroll aura spell IDs cover every rank",function()
- local groups={strength={8118,8119,8120,12179},agility={8115,8116,8117,12174},intellect={8096,8097,8098,12176},spirit={8112,8113,8114,12177},stamina={8099,8100,8101,12178},armor={8091,8092,8093,12175}}
- for stat,ids in pairs(groups) do for rank,spellID in ipairs(ids) do local aura=ns.ScrollAuraSpellIDs[spellID];assert(aura and aura.stat==stat and aura.rank==rank,stat.." rank "..rank) end end
+ local expected={
+  {"strength",1,8118,"https://www.wowhead.com/classic/spell=8118/strength"}, -- Strength I
+  {"strength",2,8119,"https://www.wowhead.com/classic/spell=8119/strength"}, -- Strength II
+  {"strength",3,8120,"https://www.wowhead.com/classic/spell=8120/strength"}, -- Strength III
+  {"strength",4,12179,"https://www.wowhead.com/classic/spell=12179/strength"}, -- Strength IV
+  {"agility",1,8115,"https://www.wowhead.com/classic/spell=8115/agility"}, -- Agility I
+  {"agility",2,8116,"https://www.wowhead.com/classic/spell=8116/agility"}, -- Agility II
+  {"agility",3,8117,"https://www.wowhead.com/classic/spell=8117/agility"}, -- Agility III
+  {"agility",4,12174,"https://www.wowhead.com/classic/spell=12174/agility"}, -- Agility IV
+  {"intellect",1,8096,"https://www.wowhead.com/classic/spell=8096/intellect"}, -- Intellect I
+  {"intellect",2,8097,"https://www.wowhead.com/classic/spell=8097/intellect"}, -- Intellect II
+  {"intellect",3,8098,"https://www.wowhead.com/classic/spell=8098/intellect"}, -- Intellect III
+  {"intellect",4,12176,"https://www.wowhead.com/classic/spell=12176/intellect"}, -- Intellect IV
+  {"spirit",1,8112,"https://www.wowhead.com/classic/spell=8112/spirit"}, -- Spirit I
+  {"spirit",2,8113,"https://www.wowhead.com/classic/spell=8113/spirit"}, -- Spirit II
+  {"spirit",3,8114,"https://www.wowhead.com/classic/spell=8114/spirit"}, -- Spirit III
+  {"spirit",4,12177,"https://www.wowhead.com/classic/spell=12177/spirit"}, -- Spirit IV
+  {"stamina",1,8099,"https://www.wowhead.com/classic/spell=8099/stamina"}, -- Stamina I
+  {"stamina",2,8100,"https://www.wowhead.com/classic/spell=8100/stamina"}, -- Stamina II
+  {"stamina",3,8101,"https://www.wowhead.com/classic/spell=8101/stamina"}, -- Stamina III
+  {"stamina",4,12178,"https://www.wowhead.com/classic/spell=12178/stamina"}, -- Stamina IV
+  {"armor",1,8091,"https://www.wowhead.com/classic/spell=8091/protection"}, -- Protection I
+  {"armor",2,8094,"https://www.wowhead.com/classic/spell=8094/protection"}, -- Protection II
+  {"armor",3,8095,"https://www.wowhead.com/classic/spell=8095/protection"}, -- Protection III
+  {"armor",4,12175,"https://www.wowhead.com/classic/spell=12175/protection"}, -- Protection IV
+ }
+ for _,ref in ipairs(expected) do local aura=ns.ScrollAuraSpellIDs[ref[3]];assert(aura and aura.stat==ref[1] and aura.rank==ref[2],"scroll aura ID mismatch: "..ref[4]) end
+ local total=0;for _ in pairs(ns.ScrollAuraSpellIDs) do total=total+1 end;assert(total==#expected)
  assert(ns.ScrollAuraSpellIDs[12174].rank==4 and ns.ScrollAuraSpellIDs[12174].stat=="agility")
 end)
 test("full queue priority order",function()
@@ -248,4 +288,5 @@ test("safe call logs, throttles, caps, and clears",function()
  for i=1,9 do run(60+i*30) end
  assert(#s.errors==10);s.errors={};assert(#s.errors==0)
 end)
+assert(loadfile("tests/mock_clickables.lua"))()(ns,test)
 print("PASS "..passed.." tests")
