@@ -88,7 +88,9 @@ end
 function ns.FoodTooltip(use)
     if not use then return nil end
     local lower=use:lower()
-    if not lower:find("well fed",1,true) then return nil end
+    local capitalized=use:find("Well Fed",1,true)~=nil
+    local eatThenBuff=lower:find("well fed",1,true)~=nil and lower:find("seconds",1,true)~=nil
+    if not capitalized and not eatThenBuff then return nil end
     local stats={"stamina","intellect","spirit","strength","agility"}
     local found={}
     for _,stat in ipairs(stats) do
