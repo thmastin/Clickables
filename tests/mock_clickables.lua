@@ -1,7 +1,11 @@
 return function(ns,test)
- local function mockClient(saved,bags,tooltipBySlot)
+ local function mockClient(saved,bags,tooltipBySlot,config)
+  config=config or {}
   local timers,frames={},{}
-  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,printed={}}
+  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior"}
+  client.names={}
+  for itemID,data in pairs(ns.ScrollItemIDs)do client.names[itemID]=data.name:gsub(" I$","")end
+  for itemID,data in pairs(ns.ElixirItemIDs)do client.names[itemID]=data.name end
   local env=setmetatable({},{__index=_G})
   env._G=env;env.unpack=unpack;env.ClickablesDB=saved;env.NUM_BAG_SLOTS=0
   env.UIParent={GetWidth=function()return 800 end,GetHeight=function()return 600 end}
@@ -18,17 +22,17 @@ return function(ns,test)
   env.C_Container={
    GetContainerNumSlots=function(bag)return #(client.bags[bag] or {})end,
    GetContainerItemInfo=function(bag,slot)return client.bags[bag] and client.bags[bag][slot]end,
-   GetContainerItemQuestInfo=function()return nil end,
+   GetContainerItemQuestInfo=function(bag,slot)return client.questInfo[bag] and client.questInfo[bag][slot] end,
    GetContainerItemLink=function()return nil end,
   }
   env.C_UnitAuras={GetAuraDataByIndex=function(unit,index)
    if unit~="player" then return nil end
-   local aura=client.auras and client.auras[index]
+   local aura=client.auras[index]
    if aura then return {name=aura.name,spellId=aura.spellID,icon=aura.icon}end
   end}
-  env.C_QuestLog={IsOnQuest=function()return false end,IsQuestFlaggedCompleted=function()return false end}
-  env.GetTalentTabInfo=function()return nil,nil,0 end
-  env.UnitClass=function()return "Warrior","WARRIOR" end
+  env.C_QuestLog={IsOnQuest=function(questID)return client.onQuest[questID] or false end,IsQuestFlaggedCompleted=function(questID)return client.completed[questID] or false end}
+  env.GetTalentTabInfo=function(tab)return nil,nil,client.talentPoints[tab] or 0 end
+  env.UnitClass=function()return client.localizedClass,client.className end
   env.C_Item.GetItemIconByID=function()return 134400 end
   env.ITEM_OPENABLE="Right Click to Open";env.ITEM_STARTS_QUEST="This Item Begins a Quest";env.ITEM_LOCKED="Locked"
   env.SlashCmdList={};env.InterfaceOptions_AddCategory=function()end
@@ -102,7 +106,7 @@ return function(ns,test)
 
  test("real Clickables button click phases toggle ignore once without right action",function()
   for _,keyDown in ipairs({false,true})do
-   local c,env=mockClient();c:load()
+   local c,env=mockClient(nil,{[0]={{itemID=5523,stackCount=1},{itemID=5524,stackCount=1}}});c:load()
    assert(table.concat(c.button.clicks,",")=="AnyUp,AnyDown")
    assert(c.button:GetAttribute("type1")=="item"and c.button:GetAttribute("item1")=="item:5523", "button item="..tostring(c.button:GetAttribute("item1")).." errors="..table.concat(c.printed," | "))
    assert(c.button:GetAttribute("type")==nil and c.button:GetAttribute("type2")==nil and c.button:GetAttribute("item2")==nil)
@@ -110,7 +114,8 @@ return function(ns,test)
    c.keyDown=keyDown
    c.button.scripts.PreClick(c.button,"RightButton",false)
    c.button.scripts.PreClick(c.button,"RightButton",true)
-   assert(env.ClickablesDB.ignored[5523]==true,"ignore toggle should fire exactly once keyDown="..tostring(keyDown).." output="..table.concat(c.printed," | "))
+   local ignoredCount=0;for _,id in ipairs({5523,5524})do if env.ClickablesDB.ignored[id]then ignoredCount=ignoredCount+1 end end
+   assert(ignoredCount==1 and env.ClickablesDB.ignored[5523]and not env.ClickablesDB.ignored[5524],"one physical click must ignore only the original queue item")
   end
  end)
 
@@ -160,5 +165,65 @@ return function(ns,test)
   assert(env.ClickablesDB.point=="TOPLEFT"and env.ClickablesDB.x==45 and env.ClickablesDB.y==67 and env.ClickablesDB.scale==1.6)
   assert(env.ClickablesDB.settingsVersion==2 and #env.ClickablesDB.priority==5)
   assert(table.concat(env.ClickablesDB.priority,",")=="quest,openable,elixir,scroll,food")
+ end)
+
+ test("rebuild deduplicates a three-slot item ID and keeps the summed count",function()
+  local c=mockClient(nil,{[0]={{itemID=5523,stackCount=1},{itemID=5523,stackCount=1},{itemID=5523,stackCount=1}}});c:load()
+  assert(c.button:GetAttribute("item1")=="item:5523","deduplicated current item should remain selectable")
+  assert(c.button.count.text==3,"dedupe real rebuild should report total count 3")
+  assert(c.button.remain.text=="","duplicate stacks must not add queued actions")
+ end)
+
+ test("rebuild chooses highest carried scroll and suppresses buffed rank IV by ID",function()
+  local c=mockClient(nil,{[0]={{itemID=954,stackCount=1},{itemID=2289,stackCount=1}}});c:load()
+  assert(c.button:GetAttribute("item1")=="item:2289","Rank I should be hidden when only Rank II is also carried")
+  local buffed=mockClient(nil,{[0]={{itemID=10309,stackCount=1}}},nil,{auras={{name="Agility",spellID=12174}}});buffed:load()
+  assert(buffed.button:GetAttribute("item1")==nil,"Rank IV agility aura should suppress Scroll of Agility IV by spell ID")
+ end)
+
+ test("rebuild suppresses matching elixir spell ID but ignores unrelated intellect and fortitude buffs",function()
+  local unrelated=mockClient(nil,{[0]={{itemID=2454,stackCount=1}}},nil,{auras={{name="Arcane Intellect",spellID=1459},{name="Fortitude",spellID=3593}}});unrelated:load()
+  assert(unrelated.button:GetAttribute("item1")=="item:2454","unrelated buffs must not suppress Lion's Strength")
+  local matching=mockClient(nil,{[0]={{itemID=2454,stackCount=1}}},nil,{auras={{name="Lion's Strength",spellID=2367}}});matching:load()
+  assert(matching.button:GetAttribute("item1")==nil,"matching elixir buff ID should suppress the item; got="..tostring(matching.button:GetAttribute("item1")))
+ end)
+
+ test("rebuild skips quest starters already active or completed",function()
+  local tooltip={[0]={[1]={"This Item Begins a Quest"}}}
+  local cases={
+   {"active item flag",{questInfo={[0]={[1]={isQuestItem=true,questID=41,isActive=true}}}},nil},
+   {"quest already active",{questInfo={[0]={[1]={isQuestItem=true,questID=41,isActive=false}}},onQuest={[41]=true}},nil},
+   {"completed quest",{questInfo={[0]={[1]={isQuestItem=true,questID=41,isActive=false}}},completed={[41]=true}},nil},
+  }
+  for _,case in ipairs(cases)do
+   local c=mockClient(nil,{[0]={{itemID=18000,stackCount=1}}},tooltip,case[2]);c:load()
+   c:fire("QUEST_LOG_UPDATE");c:flush()
+   assert(c.button:GetAttribute("item1")==nil,case[1].." quest starter should be skipped")
+  end
+ end)
+
+ test("rebuild skips buff food while Well Fed or eating aura is active",function()
+  for _,aura in ipairs({{name="Well Fed",spellID=19705},{name="Food",icon=133950}})do
+   local c=mockClient(nil,{[0]={{itemID=2888,stackCount=1}}},nil,{auras={aura}});c:load()
+   assert(c.button:GetAttribute("item1")==nil,"active food aura must suppress food")
+  end
+ end)
+
+ test("both talent-change events rebuild and rerank hybrid scrolls",function()
+  local c=mockClient(nil,{[0]={{itemID=954,stackCount=1},{itemID=955,stackCount=1}}},nil,{className="PALADIN",localizedClass="Paladin",talentPoints={0,5,0}});c:load()
+  assert(c.button:GetAttribute("item1")=="item:954","melee spec should queue Strength")
+  assert(c.eventFrame.events.PLAYER_TALENT_UPDATE and c.eventFrame.events.CHARACTER_POINTS_CHANGED)
+  c.talentPoints={5,0,0};local before=c.scanCalls;c:fire("PLAYER_TALENT_UPDATE");c:flush()
+  assert(c.scanCalls==before+2 and c.button:GetAttribute("item1")=="item:955","talent update should queue Intellect for caster spec")
+  c.talentPoints={0,5,0};before=c.scanCalls;c:fire("CHARACTER_POINTS_CHANGED");c:flush()
+  assert(c.scanCalls==before+2 and c.button:GetAttribute("item1")=="item:954","character points change should restore melee ranking")
+ end)
+
+ test("slash clear requires a second call within five seconds",function()
+  local c,env=mockClient({ignored={[5523]=true}});c:load()
+  env.SlashCmdList.CLICKABLES("clear");assert(env.ClickablesDB.ignored[5523])
+  c.now=14.9;env.SlashCmdList.CLICKABLES("clear");assert(next(env.ClickablesDB.ignored)==nil,"second clear within five seconds should empty the ignore list")
+  env.ClickablesDB.ignored[5523]=true;c.now=20;env.SlashCmdList.CLICKABLES("clear")
+  c.now=25.1;env.SlashCmdList.CLICKABLES("clear");assert(env.ClickablesDB.ignored[5523],"an expired confirmation must only arm a new window")
  end)
 end

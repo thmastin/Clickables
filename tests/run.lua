@@ -46,6 +46,12 @@ test("defaults deep-copy nested tables and validate settings lists",function()
  assert(d.settingsVersion==2 and d.ignored and #d.priority==5 and d.priority[1]=="food")
  d.priority[1]="changed";assert(ns.Defaults.priority[1]=="quest")
  local a=ns.MergeDefaults({});a.priority[1]="changed";local b=ns.MergeDefaults({});assert(b.priority[1]=="quest")
+ local laterDefaults={settingsVersion=3,priority={"quest","openable","elixir","scroll","food"},ignored={},future={nested={values={11,22}}}}
+ local oldSaved={scale=1.25};local migrated=ns.MergeDefaults(oldSaved,laterDefaults)
+ migrated.future.nested.values[1]=99
+ assert(laterDefaults.future.nested.values[1]==11,"new nested defaults must not alias the defaults table")
+ local second=ns.MergeDefaults({},laterDefaults)
+ assert(second.future.nested.values[1]==11,"new SavedVariables must receive an independent deep copy")
 end)
 test("ignore toggling",function()
  local ignored={};assert(ns.ToggleIgnore(ignored,9)==true and ignored[9]);assert(ns.ToggleIgnore(ignored,9)==false and not ignored[9])
