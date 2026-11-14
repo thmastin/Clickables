@@ -9,7 +9,7 @@ end end
 BINDING_HEADER_CLICKABLES = "Clickables"
 _G["BINDING_NAME_CLICK ClickablesButton:LeftButton"] = "Use next Clickable"
 local frame = CreateFrame("Button", "ClickablesButton", UIParent, "SecureActionButtonTemplate,BackdropTemplate")
-frame:SetSize(48,48); frame:RegisterForClicks("AnyUp"); frame:SetAttribute("type1", "item")
+frame:SetSize(48,48); frame:RegisterForClicks("AnyUp", "AnyDown"); frame:SetAttribute("type1", "item")
 frame:SetMovable(true); frame:EnableMouse(true); frame:RegisterForDrag("LeftButton")
 frame:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"}); frame:SetBackdropColor(0.04,0.04,0.04,0.75)
 local icon=frame:CreateTexture(nil,"ARTWORK"); icon:SetAllPoints(); frame.icon=icon
@@ -65,17 +65,9 @@ local function auras()
     local out={}
     local function add(name,spellID)
         if not name then return end
-        local lower=name:lower()
         out[#out+1]={name=name,spellID=spellID}
-        for _,stat in ipairs({"strength","agility","intellect","spirit","stamina"}) do
-            if lower==stat or lower==stat.." i" or lower==stat.." ii" or lower==stat.." iii" or lower==stat.." iv" then
-                local rank=lower:match(" iv$") and 4 or (lower:match(" iii$") and 3 or (lower:match(" ii$") and 2 or 1))
-                out[#out+1]={stat=stat,rank=rank};break
-            end
-        end
-        if lower=="protection" or lower=="protection i" or lower=="protection ii" or lower=="protection iii" or lower=="protection iv" or lower=="armor" then
-            local rank=lower:match(" iv$") and 4 or (lower:match(" iii$") and 3 or (lower:match(" ii$") and 2 or 1));out[#out+1]={stat="armor",rank=rank}
-        end
+        local scrollAura=spellID and ns.ScrollAuraSpellIDs[spellID]
+        if scrollAura then out[#out+1]={stat=scrollAura.stat,rank=scrollAura.rank,spellID=spellID} end
         for _,d in pairs(ns.ElixirItemIDs) do
             if (d.auraSpellID and spellID==d.auraSpellID) or (not d.auraSpellID and d.aura and name==d.aura) then
                 out[#out+1]={category=d.category,stat=d.stat,rank=d.rank,spellID=spellID,name=name};break
@@ -209,20 +201,24 @@ local function itemData(bag,slot)
     if data.kind then return data end
 end
 local function updateView()
-    ns.UpdateItemCount(queue[1],count)
+    count:SetText(queue[1] and queue[1].count>1 and queue[1].count or "")
     ns.UpdateView(queue[1], #queue, DB, frame, icon, count, remain, InCombatLockdown(), questBadge)
 end
 local function rebuild()
     if InCombatLockdown() then return end
-    currentClass=select(2,UnitClass("player"));currentSpec=playerSpec();activeAuras=auras();local scrolls={}
-    for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local bi=ns.GetContainerItemInfo(bag,slot);local sd=bi and ns.ScrollItemIDs[bi.itemID];if sd then scrolls[#scrolls+1]=sd end end end
+    currentClass=select(2,UnitClass("player"));currentSpec=playerSpec();activeAuras=auras();local scrolls={};local bagTotals={}
+    for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do
+        local bi=ns.GetContainerItemInfo(bag,slot)
+        if bi and bi.itemID then
+            bagTotals[bi.itemID]=(bagTotals[bi.itemID] or 0)+(bi.stackCount or 1)
+            local sd=ns.ScrollItemIDs[bi.itemID];if sd then scrolls[#scrolls+1]=sd end
+        end
+    end end
     carriedScrollRanks=ns.BestCarriedRanks(scrolls)
     local fresh={}
     for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local d=itemData(bag,slot); if d then fresh[#fresh+1]=d end end end
-    local totals={}
     for _,item in ipairs(fresh) do
-        if totals[item.itemID]==nil then totals[item.itemID]=ns.CountItemInBags(item.itemID) end
-        item.count=totals[item.itemID]
+        item.count=bagTotals[item.itemID] or 0
     end
     local foods={};for i=#fresh,1,-1 do if fresh[i].kind=="food" then foods[#foods+1]=table.remove(fresh,i) end end
     local best=ns.BestFood(foods)
@@ -236,8 +232,7 @@ local function rebuild()
         if tied then print("Clickables food tie -> smaller stack (total "..best.count..")") end
     end
     if best then fresh[#fresh+1]=best end
-    local counts={};for _,item in ipairs(fresh) do if not counts[item.itemID] then counts[item.itemID]=ns.CountItemInBags(item.itemID) end end
-    local unique=ns.DedupeQueue(fresh,counts);ns.SortQueue(unique,DB.priority);queue=unique;updateView()
+    local unique=ns.DedupeQueue(fresh,bagTotals);ns.SortQueue(unique,DB.priority);queue=unique;updateView()
 end
 local refreshPending=false
 local combatCountPending=false
@@ -263,7 +258,8 @@ end
 local refreshIgnoredList
 frame:SetScript("OnDragStart",safe("drag start",function(self) if not DB.locked and not InCombatLockdown() then self:StartMoving() end end))
 frame:SetScript("OnDragStop",safe("drag stop",function(self) self:StopMovingOrSizing(); local p,_,_,x,y=self:GetPoint(); DB.point=p;DB.x=x;DB.y=y end))
-frame:SetScript("PreClick",safe("PreClick",function(self,button)
+frame:SetScript("PreClick",safe("PreClick",function(self,button,down)
+    if not ns.ShouldHandleClickPhase(down,GetCVarBool("ActionButtonUseKeyDown")) then return end
     if button=="RightButton" and IsAltKeyDown() and queue[1] and not InCombatLockdown() then
         local current=queue[1]
         local ignored=ns.ToggleIgnore(DB.ignored,current.itemID)
@@ -282,11 +278,24 @@ frame:SetScript("OnEnter",safe("tooltip",function(self)
     GameTooltip:AddLine("Click to use the next item",0.5,1,0.5); GameTooltip:AddLine("Alt+right-click to ignore",0.5,1,0.5); GameTooltip:Show()
 end))
 frame:SetScript("OnLeave",safe("tooltip hide",function() GameTooltip:Hide() end))
+local pendingItemInfo={}
+local function requestItemInfo(itemID,callback)
+    pendingItemInfo[itemID]=true
+    if C_Item and C_Item.RequestLoadItemDataByID then
+        C_Item.RequestLoadItemDataByID(itemID)
+        return true
+    end
+    local requested=ns.RequestItemLoad(itemID,function(...)
+        pendingItemInfo[itemID]=nil
+        if callback then callback(...) end
+    end)
+    if not requested then pendingItemInfo[itemID]=nil end
+    return requested
+end
 local function ignoredItemText(itemID)
     local name=ns.GetItemName(itemID)
     if name then return "|Hitem:"..itemID.."|h["..name.."]|h" end
-    if C_Item and C_Item.RequestLoadItemDataByID then C_Item.RequestLoadItemDataByID(itemID)
-    else ns.RequestItemLoad(itemID) end
+    requestItemInfo(itemID)
     return "item:"..itemID
 end
 local function options()
@@ -365,14 +374,14 @@ local function slashImpl(msg)
     elseif cmd=="debug" then
         errorState.debug=not errorState.debug;print("Clickables debug mode: "..tostring(errorState.debug))
         local clicks=frame.GetRegisteredClicks and table.concat({frame:GetRegisteredClicks()},", ") or "AnyUp, AnyDown (configured)"
-        print("Clickables debug: type="..tostring(frame:GetAttribute("type"))..", item="..tostring(frame:GetAttribute("item"))..", type1="..tostring(frame:GetAttribute("type1"))..", item1="..tostring(frame:GetAttribute("item1"))..", ActionButtonUseKeyDown="..tostring(GetCVar and GetCVar("ActionButtonUseKeyDown"))..", clicks="..clicks)
+        print("Clickables debug: type1="..tostring(frame:GetAttribute("type1"))..", item1="..tostring(frame:GetAttribute("item1"))..", ActionButtonUseKeyDown="..tostring(GetCVar and GetCVar("ActionButtonUseKeyDown"))..", clicks="..clicks)
     elseif cmd=="lock" then DB.locked=true elseif cmd=="unlock" then DB.locked=false elseif cmd=="scale" then DB.scale=tonumber(arg) or DB.scale;frame:SetScale(DB.scale) elseif cmd=="list" then
         for id in pairs(DB.ignored) do
             local itemID=id
             local name=ns.GetItemName(itemID)
             local link=name and ("|Hitem:"..itemID.."|h["..name.."]|h") or ("item:"..itemID)
             print("Clickables ignored: |T"..tostring(ns.GetItemIcon(itemID) or 134400)..":16|t "..link)
-            if not name then ns.RequestItemLoad(itemID,safe("item load callback",function(loadedName,texture) if loadedName then print("Clickables ignored: |T"..tostring(texture or 134400)..":16|t |Hitem:"..itemID.."|h["..loadedName.."]|h") end end)) end
+            if not name then requestItemInfo(itemID,safe("item load callback",function(loadedName,texture) if loadedName then print("Clickables ignored: |T"..tostring(texture or 134400)..":16|t |Hitem:"..itemID.."|h["..loadedName.."]|h") end end)) end
         end
     elseif cmd=="clear" then local now=GetTime(); if not clearExpires or now>clearExpires then clearExpires=now+5;print("Clickables: run /clickables clear again within 5 seconds") else wipe(DB.ignored);clearExpires=nil;print("Clickables: ignore list cleared");if refreshIgnoredList then refreshIgnoredList() end end end;rebuild()
 end
@@ -381,14 +390,18 @@ SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
 local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED");events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 events:RegisterEvent("UNIT_AURA");events:RegisterEvent("QUEST_LOG_UPDATE");events:RegisterEvent("QUEST_REMOVED")
 if C_EventUtils and C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("PLAYER_TALENT_UPDATE") then events:RegisterEvent("PLAYER_TALENT_UPDATE") end
+events:RegisterEvent("CHARACTER_POINTS_CHANGED")
 events:SetScript("OnEvent",safe("event handler",function(_,event,name)
-    if event=="GET_ITEM_INFO_RECEIVED" then itemProperties[name]=nil;if refreshIgnoredList then refreshIgnoredList() end;scheduleRebuild()
+    if event=="GET_ITEM_INFO_RECEIVED" then
+        local itemID=tonumber(name) or name;local relevant=pendingItemInfo[itemID]
+        if not relevant then for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local info=ns.GetContainerItemInfo(bag,slot);if info and info.itemID==itemID then relevant=true;break end end;if relevant then break end end end
+        if relevant then itemProperties[itemID]=nil;pendingItemInfo[itemID]=nil;if refreshIgnoredList then refreshIgnoredList() end;scheduleRebuild() end
     elseif event=="ADDON_LOADED" and name==addonName then DB=ns.MergeDefaults(ClickablesDB);ClickablesDB=DB;position();options();scheduleRebuild()
     elseif event=="PLAYER_REGEN_ENABLED" then scheduleRebuild()
     elseif event=="UNIT_AURA" and name=="player" then scheduleRebuild()
     elseif event=="QUEST_LOG_UPDATE" or event=="QUEST_ACCEPTED" or event=="QUEST_REMOVED" then ns.MarkQuestLogReady(questLogState);scheduleRebuild()
     elseif event=="BAG_UPDATE_DELAYED" then
         scheduleRebuild()
-    elseif event=="PLAYER_TALENT_UPDATE" then scheduleRebuild()
+    elseif event=="PLAYER_TALENT_UPDATE" or event=="CHARACTER_POINTS_CHANGED" then scheduleRebuild()
     elseif event=="PLAYER_ENTERING_WORLD" then scheduleRebuild() end
 end))

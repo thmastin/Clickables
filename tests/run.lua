@@ -50,6 +50,13 @@ end)
 test("ignore toggling",function()
  local ignored={};assert(ns.ToggleIgnore(ignored,9)==true and ignored[9]);assert(ns.ToggleIgnore(ignored,9)==false and not ignored[9])
 end)
+test("Alt right-click toggle runs only on the configured click phase",function()
+ for _,keyDown in ipairs({false,true}) do
+  local calls=0
+  for _,down in ipairs({false,true}) do if ns.ShouldHandleClickPhase(down,keyDown) then calls=calls+1 end end
+  assert(calls==1)
+ end
+end)
 test("ignored item names prefer C_Item and fall back to GetItemInfo",function()
  local oldCItem,oldInfo=C_Item,GetItemInfo
  C_Item={GetItemNameByID=function(id) if id==12 then return "Known item" end end}
@@ -173,6 +180,16 @@ test("elixir aura uses spell ID or exact fallback",function()
  assert(not ns.ElixirAuraActive({{spellID=1,name="Greater Defense"}},elixir))
  assert(ns.ElixirAuraActive({{name="Greater Defense"}},{aura="Greater Defense"}))
  assert(not ns.ElixirConflict({{category="battle"}},"battle"))
+end)
+test("Forever elixir aura spell IDs",function()
+ local expected={[2454]=2367,[5997]=7183,[3389]=3220,[3390]=3160,[3383]=3166,[3825]=3450,[8949]=11328,[9179]=11396,[9206]=11405,[13452]=17571,[9187]=11334,[8951]=11450}
+ for itemID,spellID in pairs(expected) do assert(ns.ElixirItemIDs[itemID].auraSpellID==spellID,"elixir aura ID mismatch for "..itemID) end
+ for itemID,record in pairs(ns.ElixirItemIDs) do assert(expected[itemID]==record.auraSpellID,"unexpected elixir record "..itemID) end
+end)
+test("scroll aura spell IDs cover every rank",function()
+ local groups={strength={8118,8119,8120,12179},agility={8115,8116,8117,12174},intellect={8096,8097,8098,12176},spirit={8112,8113,8114,12177},stamina={8099,8100,8101,12178},armor={8091,8092,8093,12175}}
+ for stat,ids in pairs(groups) do for rank,spellID in ipairs(ids) do local aura=ns.ScrollAuraSpellIDs[spellID];assert(aura and aura.stat==stat and aura.rank==rank,stat.." rank "..rank) end end
+ assert(ns.ScrollAuraSpellIDs[12174].rank==4 and ns.ScrollAuraSpellIDs[12174].stat=="agility")
 end)
 test("full queue priority order",function()
  local q={{kind="food",bag=0,slot=1},{kind="scroll",bag=0,slot=2},{kind="elixir",bag=0,slot=3},{kind="openable",bag=0,slot=4},{kind="quest",bag=0,slot=5}}

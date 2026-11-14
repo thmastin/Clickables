@@ -21,20 +21,29 @@ ns.ScrollItemIDs = {
     [1180]={stat="stamina",rank=1,name="Scroll of Stamina I"}, [1711]={stat="stamina",rank=2,name="Scroll of Stamina II"}, [4422]={stat="stamina",rank=3,name="Scroll of Stamina III"}, [10307]={stat="stamina",rank=4,name="Scroll of Stamina IV"},
     [3013]={stat="armor",rank=1,name="Scroll of Protection I"}, [1478]={stat="armor",rank=2,name="Scroll of Protection II"}, [4421]={stat="armor",rank=3,name="Scroll of Protection III"}, [10305]={stat="armor",rank=4,name="Scroll of Protection IV"},
 }
+-- Spell IDs for the actual player buff applied by each scroll rank.
+ns.ScrollAuraSpellIDs = {
+    [8118]={stat="strength",rank=1}, [8119]={stat="strength",rank=2}, [8120]={stat="strength",rank=3}, [12179]={stat="strength",rank=4},
+    [8115]={stat="agility",rank=1}, [8116]={stat="agility",rank=2}, [8117]={stat="agility",rank=3}, [12174]={stat="agility",rank=4},
+    [8096]={stat="intellect",rank=1}, [8097]={stat="intellect",rank=2}, [8098]={stat="intellect",rank=3}, [12176]={stat="intellect",rank=4},
+    [8112]={stat="spirit",rank=1}, [8113]={stat="spirit",rank=2}, [8114]={stat="spirit",rank=3}, [12177]={stat="spirit",rank=4},
+    [8099]={stat="stamina",rank=1}, [8100]={stat="stamina",rank=2}, [8101]={stat="stamina",rank=3}, [12178]={stat="stamina",rank=4},
+    [8091]={stat="armor",rank=1}, [8092]={stat="armor",rank=2}, [8093]={stat="armor",rank=3}, [12175]={stat="armor",rank=4},
+}
 -- Each record names its aura. Name matching is a fallback when spell IDs differ across client builds.
 ns.ElixirItemIDs = {
-    [2454]={category="battle", stat="strength", rank=1, name="Elixir of Lion's Strength", aura="Elixir of Lion's Strength", auraSpellID=2367},
-    [5997]={category="guardian", stat="armor", rank=1, name="Elixir of Minor Defense", aura="Armor", auraSpellID=673},
-    [3389]={category="guardian", stat="armor", rank=2, name="Elixir of Defense", aura="Armor", auraSpellID=11348},
-    [3390]={category="battle", stat="agility", rank=2, name="Elixir of Lesser Agility", aura="Agility", auraSpellID=3160},
-    [3383]={category="guardian", stat="intellect", rank=2, name="Elixir of Wisdom", aura="Elixir of Wisdom", auraSpellID=11467},
-    [3825]={category="guardian", stat="stamina", rank=3, name="Elixir of Fortitude", aura="Fortitude", auraSpellID=3593},
-    [8949]={category="battle", stat="agility", rank=3, name="Elixir of Agility", aura="Agility", auraSpellID=11334},
-    [9179]={category="battle", stat="intellect", rank=4, name="Elixir of Greater Intellect", aura="Intellect", auraSpellID=11390},
+    [2454]={category="battle", stat="strength", rank=1, name="Elixir of Lion's Strength", aura="Lion's Strength", auraSpellID=2367},
+    [5997]={category="guardian", stat="armor", rank=1, name="Elixir of Minor Defense", aura="Armor", auraSpellID=7183},
+    [3389]={category="guardian", stat="armor", rank=2, name="Elixir of Defense", aura="Armor", auraSpellID=3220},
+    [3390]={category="battle", stat="agility", rank=2, name="Elixir of Lesser Agility", aura="Lesser Agility", auraSpellID=3160},
+    [3383]={category="guardian", stat="intellect", rank=2, name="Elixir of Wisdom", aura="Intellect", auraSpellID=3166},
+    [3825]={category="guardian", stat="stamina", rank=3, name="Elixir of Fortitude", aura="Fortitude", auraSpellID=3450},
+    [8949]={category="battle", stat="agility", rank=3, name="Elixir of Agility", aura="Agility", auraSpellID=11328},
+    [9179]={category="battle", stat="intellect", rank=4, name="Elixir of Greater Intellect", aura="Intellect", auraSpellID=11396},
     [9206]={category="battle", stat="strength", rank=4, name="Elixir of Giants", aura="Giants", auraSpellID=11405},
-    [13452]={category="battle", stat="agility", rank=5, name="Elixir of the Mongoose", aura="Mongoose", auraSpellID=17538},
-    [9187]={category="battle", stat="agility", rank=4, name="Elixir of Greater Agility", aura="Agility", auraSpellID=11328},
-    [8951]={category="guardian", stat="armor", rank=4, name="Elixir of Greater Defense", aura="Elixir of Greater Defense", auraSpellID=11349},
+    [13452]={category="battle", stat="agility", rank=5, name="Elixir of the Mongoose", aura="Mongoose", auraSpellID=17571},
+    [9187]={category="battle", stat="agility", rank=4, name="Elixir of Greater Agility", aura="Agility", auraSpellID=11334},
+    [8951]={category="guardian", stat="armor", rank=4, name="Elixir of Greater Defense", aura="Armor", auraSpellID=11450},
 }
 -- Centralized tuning table for class/spec eligibility.
 ns.ClassScrollRules = {
@@ -210,6 +219,9 @@ function ns.MergeDefaults(db, defaults)
 end
 function ns.ToggleIgnore(ignored,itemID)
     if not itemID then return false end; ignored=ignored or {}; ignored[itemID]=not ignored[itemID] or nil; return ignored[itemID]==true
+end
+function ns.ShouldHandleClickPhase(down,keyDown)
+    return down==keyDown
 end
 function ns.GetItemInfo(itemID)
     if C_Item and C_Item.GetItemInfo then local info=C_Item.GetItemInfo(itemID); if info then return info end end
