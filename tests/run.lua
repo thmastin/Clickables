@@ -69,6 +69,18 @@ test("updateView works when GetItemIcon is unavailable",function()
  assert(view.attributes.item==nil and view.attributes.item1==nil)
  GetItemIcon,GetItemInfo,C_Item=oldIcon,oldInfo,oldCItem
 end)
+test("quest badge shows only for quest starters",function()
+ local badge={texture=nil,shown=false,SetTexture=function(self,v)self.texture=v end,Show=function(self)self.shown=true end,Hide=function(self)self.shown=false end}
+ local frame={SetAlpha=function()end,Show=function()end,Hide=function()end,SetAttribute=function()end}
+ local icon={SetTexture=function()end};local count={SetText=function()end};local remain={SetText=function()end}
+ local function show(kind,active)
+  ns.UpdateView({itemID=42,kind=kind,questActive=active,count=1},1,{},frame,icon,count,remain,false,badge)
+ end
+ show("quest",false);assert(badge.shown and badge.texture=="Interface\\ContainerFrame\\UI-Icon-QuestBang")
+ show("quest",true);assert(badge.shown and badge.texture=="Interface\\ContainerFrame\\UI-Icon-QuestBorder")
+ for _,kind in ipairs({"openable","elixir","scroll","food"}) do show(kind,false);assert(not badge.shown,kind.." must not show the quest badge") end
+ show(nil,false);assert(not badge.shown)
+end)
 test("button count sums item stacks across bags and hides one",function()
  local oldContainer,oldSlots=C_Container,NUM_BAG_SLOTS
  local bags={

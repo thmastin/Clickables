@@ -13,6 +13,7 @@ frame:SetSize(48,48); frame:RegisterForClicks("AnyUp", "AnyDown"); frame:SetAttr
 frame:SetMovable(true); frame:EnableMouse(true); frame:RegisterForDrag("LeftButton")
 frame:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"}); frame:SetBackdropColor(0.04,0.04,0.04,0.75)
 local icon=frame:CreateTexture(nil,"ARTWORK"); icon:SetAllPoints(); frame.icon=icon
+local questBadge=frame:CreateTexture(nil,"OVERLAY"); questBadge:SetSize(16,16); questBadge:SetPoint("TOPLEFT",icon,"TOPLEFT",0,0); questBadge:Hide(); frame.questBadge=questBadge
 local count=frame:CreateFontString(nil,"OVERLAY","NumberFontNormal"); count:SetPoint("BOTTOMRIGHT",-1,1); frame.count=count
 local remain=frame:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); remain:SetPoint("TOP",frame,"BOTTOM",0,-2); frame.remain=remain
 local function bagName(bag,slot) return bag.." "..slot end
@@ -117,7 +118,7 @@ local function itemData(bag,slot)
     end
     local startsQuest=ns.QuestDecision(questInfo,quest,questStatus)
     local kind=ns.Classify({itemID=info.itemID,lootable=loot,tooltipOpenable=open,allowlisted=ns.OpenableItemIDs[info.itemID],quest=startsQuest,locked=locked},DB)
-    local data={bag=bag,slot=slot,itemID=info.itemID,count=info.stackCount or 1,link=ns.GetContainerItemLink(bag,slot)}
+    local data={bag=bag,slot=slot,itemID=info.itemID,count=info.stackCount or 1,link=ns.GetContainerItemLink(bag,slot),questActive=questInfo and questInfo.isActive}
     local sd=ns.ScrollItemIDs[info.itemID]; local ed=ns.ElixirItemIDs[info.itemID]
     -- The checked-in IDs come from the installed Forever LibForeverData list;
     -- verify cached client names before applying a mapping.
@@ -203,7 +204,7 @@ local function itemData(bag,slot)
 end
 local function updateView()
     ns.UpdateItemCount(queue[1],count)
-    ns.UpdateView(queue[1], #queue, DB, frame, icon, count, remain, InCombatLockdown())
+    ns.UpdateView(queue[1], #queue, DB, frame, icon, count, remain, InCombatLockdown(), questBadge)
 end
 local function rebuild()
     if InCombatLockdown() then return end

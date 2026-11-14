@@ -235,9 +235,15 @@ function ns.UpdateItemCount(current,countText)
     countText:SetText(total>1 and total or "")
     return total
 end
-function ns.UpdateView(current,queueLength,db,frame,icon,count,remain,inCombat)
+function ns.UpdateView(current,queueLength,db,frame,icon,count,remain,inCombat,questBadge)
     if inCombat then return end
     frame:SetAttribute("type","item");frame:SetAttribute("type1","item")
+    if questBadge then
+        if current and current.kind=="quest" then
+            questBadge:SetTexture(current.questActive and "Interface\\ContainerFrame\\UI-Icon-QuestBorder" or "Interface\\ContainerFrame\\UI-Icon-QuestBang")
+            questBadge:Show()
+        else questBadge:Hide() end
+    end
     if not current then frame:SetAttribute("item",nil);frame:SetAttribute("item1",nil);icon:SetTexture(nil);count:SetText("");remain:SetText("");if db.hideWhenEmpty then frame:Hide() else frame:SetAlpha(0.35);frame:Show() end;return end
     frame:SetAlpha(1);frame:Show();icon:SetTexture(ns.GetItemIcon(current.itemID));count:SetText(current.count>1 and current.count or "");remain:SetText(queueLength>1 and ((queueLength-1).." more") or "")
     local item="item:"..current.itemID;frame:SetAttribute("item",item);frame:SetAttribute("item1",item)
