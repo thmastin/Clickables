@@ -47,6 +47,7 @@ local function auras()
     local function add(name,spellID)
         if not name then return end
         local lower=name:lower()
+        out[#out+1]={name=name,spellID=spellID}
         for _,stat in ipairs({"strength","agility","intellect","spirit","stamina"}) do
             if lower:find(stat,1,true) then
                 local rank=lower:match(" iv$") and 4 or (lower:match(" iii$") and 3 or (lower:match(" ii$") and 2 or 1))
@@ -59,7 +60,7 @@ local function auras()
         for _,d in pairs(ns.ElixirItemIDs) do if name:lower():find((d.aura or ""):lower(),1,true) then out[#out+1]={category=d.category,stat=d.stat,rank=d.rank,spellID=spellID};break end end
     end
     if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-        for i=1,40 do local a=C_UnitAuras.GetAuraDataByIndex("player",i,"HELPFUL");if not a then break end;add(a.name,a.spellId) end
+        for i=1,40 do local a=C_UnitAuras.GetAuraDataByIndex("player",i,"HELPFUL");if not a then break end;local n=#out+1;add(a.name,a.spellId);if a.icon==133950 and #out>=n then out[#out].icon=133950 end end
     else
         local f=UnitBuff or UnitAura
         if f then for i=1,40 do local name,_,_,_,_,_,_,_,_,spellID=f("player",i);if not name then break end;add(name,spellID) end end
@@ -93,7 +94,10 @@ local function itemData(bag,slot)
         local expected=sd.name:gsub(" I$","")
         if knownName~=expected then sd=nil end
     end
-    if sd and DB.scrolls then
+    local food=ns.FoodTooltip(use)
+    if food and DB.food and not ns.FoodAuraActive(auras()) and ns.FoodEligible(food,select(2,UnitClass("player")),playerSpec(),DB.classFilterOverride) then
+        data.kind="food";data.bonus=food.bonus;data.reason="No Well Fed buff"
+    elseif sd and DB.scrolls then
         local best=sd.rank
         for _,d in pairs(ns.ScrollItemIDs) do if d.stat==sd.stat and d.rank>best then for b=0,NUM_BAG_SLOTS do for sl=1,ns.GetContainerNumSlots(b) do local bi=ns.GetContainerItemInfo(b,sl);if bi and bi.itemID then local candidate=ns.ScrollItemIDs[bi.itemID];if candidate and candidate.stat==sd.stat and candidate.rank>d.rank then best=candidate.rank end end end end end end
         local active=ns.ActiveRank(auras(),sd.stat)
@@ -121,6 +125,8 @@ local function rebuild()
     if InCombatLockdown() then return end
     local fresh={}
     for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local d=itemData(bag,slot); if d then fresh[#fresh+1]=d end end end
+    local foods={};for i=#fresh,1,-1 do if fresh[i].kind=="food" then foods[#foods+1]=table.remove(fresh,i) end end
+    local best=ns.BestFood(foods);if best then fresh[#fresh+1]=best end
     ns.SortQueue(fresh);queue=fresh;updateView()
 end
 local function position()
@@ -169,7 +175,7 @@ local function options()
     local function check(label,key)
         local c=CreateFrame("CheckButton",nil,panel,"InterfaceOptionsCheckButtonTemplate");c:SetPoint("TOPLEFT",16,y);c.Text:SetText(label);c:SetChecked(DB[key]);c:SetScript("OnClick",safe("option toggle",function(self) DB[key]=self:GetChecked();rebuild() end));y=y-30
     end
-    check("Lock position","locked"); check("Hide when empty (otherwise dim)","hideWhenEmpty"); check("Openables","openables"); check("Quest starter items","questStarters");check("Elixirs","elixirs");check("Scrolls","scrolls");check("Use scrolls/elixirs my class normally wouldn't","classFilterOverride")
+    check("Lock position","locked"); check("Hide when empty (otherwise dim)","hideWhenEmpty"); check("Openables","openables"); check("Quest starter items","questStarters");check("Elixirs","elixirs");check("Scrolls","scrolls");check("Food","food");check("Use scrolls/elixirs/food my class normally wouldn't","classFilterOverride")
     local errorsHint=panel:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall");errorsHint:SetPoint("TOPLEFT",16,y);errorsHint:SetText("Show recent errors: /clickables errors    Clear: /clickables errors clear");y=y-24
     local scale=CreateFrame("Slider",nil,panel,"OptionsSliderTemplate");scale:SetPoint("TOPLEFT",20,y);scale:SetMinMaxValues(0.5,2);scale:SetValueStep(0.1);scale:SetValue(DB.scale);scale:SetWidth(180);scale.Text:SetText("Scale");scale:SetScript("OnValueChanged",safe("scale option",function(_,v) DB.scale=v;frame:SetScale(v) end))
     local listTitle=panel:CreateFontString(nil,"ARTWORK","GameFontNormal")

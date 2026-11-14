@@ -2,7 +2,7 @@ local _, ns = ...
 ns = ns or {}
 
 ns.Defaults = { point="CENTER", x=0, y=-120, scale=1, locked=false, hideWhenEmpty=false,
-    openables=true, questStarters=true, scrolls=true, elixirs=true, classFilterOverride=false, ignored={} }
+    openables=true, questStarters=true, scrolls=true, elixirs=true, food=true, classFilterOverride=false, ignored={} }
 ns.OpenableItemIDs = {
     [5523]=true, [5524]=true, [5525]=true, [5526]=true,
     [16882]=true, [16883]=true, [16884]=true, [16885]=true,
@@ -78,6 +78,39 @@ function ns.ElixirConflict(auras, category)
     for _,a in ipairs(auras or {}) do if a.category==category then return true end end
     return false
 end
+function ns.FoodAuraActive(auras)
+    local foodBuffs={[18192]=true,[18194]=true,[22730]=true,[25661]=true,[18125]=true,[18141]=true}
+    for _,a in ipairs(auras or {}) do
+        if a.name=="Well Fed" or a.name=="Food" or a.icon==133950 or a.spellID==19705 or foodBuffs[a.spellID] then return true end
+    end
+    return false
+end
+function ns.FoodTooltip(use)
+    if not use then return nil end
+    local lower=use:lower()
+    if not lower:find("well fed",1,true) then return nil end
+    local stats={"stamina","intellect","spirit","strength","agility"}
+    local found={}
+    for _,stat in ipairs(stats) do
+        local n=lower:match("([%d%.]+)%s+"..stat) or lower:match(stat.."%s+by%s+([%d%.]+)")
+        if n then found[#found+1]={stat=stat,bonus=tonumber(n) or 0} end
+    end
+    local bonus=0
+    for _,entry in ipairs(found) do if entry.bonus>bonus then bonus=entry.bonus end end
+    return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil)}
+end
+function ns.FoodEligible(food,class,spec,override)
+    if not food or not food.stats or #food.stats==0 then return true end
+    if #food.stats>1 then return true end
+    return ns.ClassAllows(class,spec,food.stats[1].stat,override)
+end
+function ns.BestFood(items)
+    local best
+    for _,item in ipairs(items or {}) do
+        if not best or (item.bonus or 0)>(best.bonus or 0) or ((item.bonus or 0)==(best.bonus or 0) and (item.count or 1)>(best.count or 1)) then best=item end
+    end
+    return best
+end
 function ns.MergeDefaults(db, defaults)
     db=type(db)=="table" and db or {}; defaults=defaults or ns.Defaults
     for k,v in pairs(defaults) do if db[k]==nil then db[k]=type(v)=="table" and {} or v end end
@@ -126,7 +159,7 @@ function ns.Classify(item,settings)
     return nil
 end
 function ns.SortQueue(items)
-    local priority={quest=1,openable=2,elixir=3,scroll=4}
+    local priority={quest=1,openable=2,elixir=3,scroll=4,food=5}
     table.sort(items,function(a,b) local pa,pb=priority[a.kind] or 99,priority[b.kind] or 99;if pa~=pb then return pa<pb end;if a.bag~=b.bag then return a.bag<b.bag end;return a.slot<b.slot end);return items
 end
 return ns

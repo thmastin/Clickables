@@ -1,6 +1,6 @@
 # Clickables
 
-Clickables provides one secure button for the next quest starter, openable, elixir, or scroll in your bags. It never uses an item automatically; click the button or use the **Use next Clickable** key binding.
+Clickables provides one secure button for the next quest starter, openable, elixir, scroll, or buff food in your bags. It never uses an item automatically; click the button or use the **Use next Clickable** key binding.
 
 ## Install
 
@@ -8,7 +8,7 @@ Copy the `Clickables` folder into your Forever client's `Interface\AddOns` direc
 
 ## Options
 
-Find **Clickables** under Game Menu > Options > AddOns. Lock or drag the button, set scale, choose hide or dim when empty, and toggle each supported item type. Elixirs and scrolls are on by default. Scrolls are filtered by class and best carried rank; current buffs and elixir categories are checked before queuing. Hybrids use the talent tree with the most points when available. Enable the class override to allow normally filtered stats. Alt+right-click toggles the current item on the ignore list. Bag item clicks are left to your bag addons to avoid modifier conflicts. The ignore list shows item icons and names when available.
+Find **Clickables** under Game Menu > Options > AddOns. Lock or drag the button, set scale, choose hide or dim when empty, and toggle each supported item type. Food, elixirs, and scrolls are on by default. Food is offered only when its `Use:` tooltip indicates a Well Fed buff and no Well Fed or eating aura is active. Stat food follows the same class/spec rules as scrolls and elixirs. Eligible food is ranked by its highest single stat bonus, then stack size. Scrolls are filtered by class and best carried rank; elixir categories are checked before queuing. Hybrids use the talent tree with the most points when available. Enable the class override to allow normally filtered stats. Alt+right-click toggles the current item on the ignore list. Bag item clicks are left to your bag addons to avoid modifier conflicts. The ignore list shows item icons and names when available.
 
 Slash commands include `/clickables errors` to show the last ten errors, `/clickables errors clear` to clear them, and `/clickables debug` to toggle immediate stack output, plus `/clickables lock`, `/clickables unlock`, `/clickables scale <number>`, `/clickables list`, and `/clickables clear` (run twice within five seconds).
 
@@ -16,7 +16,7 @@ The addon targets WoW Forever (`_forever_`, Interface 16001). Locked items are s
 
 ## Tests
 
-Run `luajit tests/run.lua` from this folder.
+Run `luajit tests/run.lua` from this folder. CI also parses every Lua file with `luac -p`.
 
 ## Versioning
 
@@ -30,7 +30,6 @@ Releases are tagged only after in-game checks. GitHub Actions builds releases wi
 
 ## Planned
 
-- **v1.2:** food, with a Well Fed check through Shift-click.
 - Later: low-health bandage and healthstone suggestions (off by default).
 
 Initial implementation details are tracked in the feature branch.
