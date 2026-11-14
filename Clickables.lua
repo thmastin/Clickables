@@ -9,7 +9,7 @@ end end
 BINDING_HEADER_CLICKABLES = "Clickables"
 _G["BINDING_NAME_CLICK ClickablesButton:LeftButton"] = "Use next Clickable"
 local frame = CreateFrame("Button", "ClickablesButton", UIParent, "SecureActionButtonTemplate,BackdropTemplate")
-frame:SetSize(48,48); frame:RegisterForClicks("AnyUp", "AnyDown"); frame:SetAttribute("type", "item"); frame:SetAttribute("type1", "item")
+frame:SetSize(48,48); frame:RegisterForClicks("AnyUp", "AnyDown"); frame:SetAttribute("type1", "item")
 frame:SetMovable(true); frame:EnableMouse(true); frame:RegisterForDrag("LeftButton")
 frame:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"}); frame:SetBackdropColor(0.04,0.04,0.04,0.75)
 local icon=frame:CreateTexture(nil,"ARTWORK"); icon:SetAllPoints(); frame.icon=icon
@@ -17,13 +17,21 @@ local questBadge=frame:CreateTexture(nil,"OVERLAY"); questBadge:SetAllPoints(ico
 local count=frame:CreateFontString(nil,"OVERLAY","NumberFontNormal"); count:SetPoint("BOTTOMRIGHT",-1,1); frame.count=count
 local remain=frame:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); remain:SetPoint("TOP",frame,"BOTTOM",0,-2); frame.remain=remain
 local function bagName(bag,slot) return bag.." "..slot end
-local function getText(itemID)
-    local scan=CreateFrame("GameTooltip", "ClickablesScanTooltip", nil, "GameTooltipTemplate")
-    scan:SetOwner(UIParent,"ANCHOR_NONE"); scan:SetItemByID(itemID)
+local scanTooltip=CreateFrame("GameTooltip", "ClickablesScanTooltip", nil, "GameTooltipTemplate")
+scanTooltip:Hide()
+local itemProperties={}
+local function getText(itemID,bag,slot)
+    scanTooltip:SetOwner(UIParent,"ANCHOR_NONE"); scanTooltip:SetBagItem(bag,slot)
+    local cached=itemProperties[itemID]
+    if cached then
+        local locked=false
+        for i=1,scanTooltip:NumLines() do local line=_G["ClickablesScanTooltipTextLeft"..i];local s=line and line:GetText();if s and s:find(ITEM_LOCKED or "Locked",1,true) then locked=true end end
+        scanTooltip:Hide();return cached.open,cached.quest,locked,cached.use
+    end
     local open,quest,locked=false,false,false
     local useParts,inUse={},false
     local openText=ITEM_OPENABLE or "Right Click to Open"; local questText=ITEM_STARTS_QUEST or "This Item Begins a Quest"
-    for i=1,scan:NumLines() do
+    for i=1,scanTooltip:NumLines() do
         local line=_G["ClickablesScanTooltipTextLeft"..i]
         local s=line and line:GetText()
         if s then
@@ -39,7 +47,8 @@ local function getText(itemID)
             if s:find(ITEM_LOCKED or "Locked",1,true) then locked=true end
         end
     end
-    scan:Hide(); return open,quest,locked,#useParts>0 and ns.JoinTooltipLines(useParts) or nil
+    scanTooltip:Hide();local use=#useParts>0 and ns.JoinTooltipLines(useParts) or nil
+    itemProperties[itemID]={open=open,quest=quest,use=use};return open,quest,locked,use
 end
 local function playerSpec()
     if not GetTalentTabInfo then return nil end
@@ -56,18 +65,14 @@ local function auras()
     local out={}
     local function add(name,spellID)
         if not name then return end
-        local lower=name:lower()
         out[#out+1]={name=name,spellID=spellID}
-        for _,stat in ipairs({"strength","agility","intellect","spirit","stamina"}) do
-            if lower:find(stat,1,true) then
-                local rank=lower:match(" iv$") and 4 or (lower:match(" iii$") and 3 or (lower:match(" ii$") and 2 or 1))
-                out[#out+1]={stat=stat,rank=rank};break
+        local scrollAura=spellID and ns.ScrollAuraSpellIDs[spellID]
+        if scrollAura then out[#out+1]={stat=scrollAura.stat,rank=scrollAura.rank,spellID=spellID} end
+        for _,d in pairs(ns.ElixirItemIDs) do
+            if (d.auraSpellID and spellID==d.auraSpellID) or (not d.auraSpellID and d.aura and name==d.aura) then
+                out[#out+1]={category=d.category,stat=d.stat,rank=d.rank,spellID=spellID,name=name};break
             end
         end
-        if lower:find("protection",1,true) or lower:find("armor",1,true) then
-            local rank=lower:match(" iv$") and 4 or (lower:match(" iii$") and 3 or (lower:match(" ii$") and 2 or 1));out[#out+1]={stat="armor",rank=rank}
-        end
-        for _,d in pairs(ns.ElixirItemIDs) do if name:lower():find((d.aura or ""):lower(),1,true) then out[#out+1]={category=d.category,stat=d.stat,rank=d.rank,spellID=spellID};break end end
     end
     if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
         for i=1,40 do local a=C_UnitAuras.GetAuraDataByIndex("player",i,"HELPFUL");if not a then break end;local n=#out+1;add(a.name,a.spellId);if a.icon==133950 and #out>=n then out[#out].icon=133950 end end
@@ -92,21 +97,15 @@ local function scoreText(name,stats,class,spec)
     if #parts==0 then parts[1]="unknown" end
     return name.." "..table.concat(parts," + ").." = "..string.format("%g",ns.ItemStatScore(stats,class,spec))
 end
+local currentClass,currentSpec,activeAuras,carriedScrollRanks
 local function itemData(bag,slot)
     local info=ns.GetContainerItemInfo(bag,slot)
     if not info or not info.itemID then return end
     local questInfo=ns.GetContainerItemQuestInfo(bag,slot)
-    local open,quest,locked,use=getText(info.itemID)
+    if DB.ignored and DB.ignored[info.itemID] then return nil end
+    local open,quest,locked,use=getText(info.itemID,bag,slot)
     local foodCandidate=ns.FoodCandidate(info.itemID,use)
     local food=ns.FoodData(info.itemID,use)
-    if DB.ignored and DB.ignored[info.itemID] then
-        if errorState.debug and foodCandidate then
-            local class=select(2,UnitClass("player"));local spec=playerSpec()
-            local name=ns.GetItemName(info.itemID) or tostring(info.itemID)
-            print("Clickables food "..scoreText(name,food and food.stats,class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): ignored")
-        end
-        return nil
-    end
     local itemInfo=ns.GetItemInfo(info.itemID)
     local loot=info.hasLoot or info.isLootable or (itemInfo and (itemInfo.hasLoot or itemInfo.isLootable))
     local questID=questInfo and questInfo.questID
@@ -132,8 +131,8 @@ local function itemData(bag,slot)
     end
     local foodActive,foodAllowed=false,true
     if foodCandidate then
-        local class=select(2,UnitClass("player"));local spec=playerSpec()
-        foodActive=ns.FoodAuraActive(auras())
+        local class=currentClass;local spec=currentSpec
+        foodActive=ns.FoodAuraActive(activeAuras)
         if food then foodAllowed=ns.FoodEligible(food,class,spec,DB.classFilterOverride);food.score=ns.ItemStatScore(food.stats,class,spec) end
         local name=ns.GetItemName(info.itemID) or tostring(info.itemID)
         if errorState.debug then
@@ -149,10 +148,9 @@ local function itemData(bag,slot)
     if food and DB.food and not foodActive and foodAllowed then
         data.kind="food";data.bonus=food.bonus;data.score=food.score;data.reason="No Well Fed buff"
     elseif sd then
-        local class=select(2,UnitClass("player"));local spec=playerSpec()
-        local best=sd.rank
-        for _,d in pairs(ns.ScrollItemIDs) do if d.stat==sd.stat and d.rank>best then for b=0,NUM_BAG_SLOTS do for sl=1,ns.GetContainerNumSlots(b) do local bi=ns.GetContainerItemInfo(b,sl);if bi and bi.itemID then local candidate=ns.ScrollItemIDs[bi.itemID];if candidate and candidate.stat==sd.stat and candidate.rank>d.rank then best=candidate.rank end end end end end end
-        local active=ns.ActiveRank(auras(),sd.stat)
+        local class=currentClass;local spec=currentSpec
+        local best=carriedScrollRanks and carriedScrollRanks[sd.stat] or sd.rank
+        local active=ns.ActiveRank(activeAuras,sd.stat)
         local score=ns.StatScore(sd.stat,sd.rank,class,spec)
         local allowed=ns.ClassAllows(class,spec,sd.stat,DB.classFilterOverride)
         local reason
@@ -163,22 +161,22 @@ local function itemData(bag,slot)
         else data.kind="scroll";data.stat=sd.stat;data.score=score;data.reason=sd.name..", "..(active>0 and "weaker "..sd.stat.." buff active" or "no "..(sd.stat=="armor" and "Armor" or sd.stat:sub(1,1):upper()..sd.stat:sub(2)).." buff active");reason="eligible" end
         if errorState.debug then print("Clickables scroll "..scoreText(knownName or sd.name,{{stat=sd.stat,bonus=sd.rank}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
     elseif ed then
-        local class=select(2,UnitClass("player"));local spec=playerSpec()
+        local class=currentClass;local spec=currentSpec
         local score=ns.StatScore(ed.stat,ed.rank,class,spec)
         local allowed=ns.ClassAllows(class,spec,ed.stat,DB.classFilterOverride)
-        local conflict=ns.ElixirConflict(auras(),ed.category)
+        local conflict=ns.ElixirAuraActive(activeAuras,ed)
         local reason
         if not DB.elixirs then reason="Elixirs disabled"
         elseif not allowed then reason="class filter"
-        elseif conflict then reason=ed.category.." elixir active"
-        else data.kind="elixir";data.stat=ed.stat;data.score=score;data.reason=ed.name..", no "..ed.category.." elixir active";reason="eligible" end
+        elseif conflict then reason="this elixir buff active"
+        else data.kind="elixir";data.stat=ed.stat;data.score=score;data.reason=ed.name..", buff not active";reason="eligible" end
         if errorState.debug then print("Clickables elixir "..scoreText(knownName or ed.name,{{stat=ed.stat,bonus=ed.rank}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
     elseif not sd and not ed and use then
         local stat=inferredUse(use)
         local label=(knownName or ns.GetItemName(info.itemID) or ""):lower()
-        local class=select(2,UnitClass("player"));local spec=playerSpec()
+        local class=currentClass;local spec=currentSpec
         if stat and label:find("scroll",1,true) then
-            local active=ns.ActiveRank(auras(),stat)>0
+            local active=ns.ActiveRank(activeAuras,stat)>0
             local allowed=ns.ClassAllows(class,spec,stat,DB.classFilterOverride)
             local reason
             if not DB.scrolls then reason="Scrolls disabled"
@@ -189,7 +187,7 @@ local function itemData(bag,slot)
         elseif stat and label:find("elixir",1,true) then
             local category=use:lower():find("guardian",1,true) and "guardian" or (use:lower():find("battle",1,true) and "battle")
             local allowed=ns.ClassAllows(class,spec,stat,DB.classFilterOverride)
-            local conflict=category and ns.ElixirConflict(auras(),category)
+            local conflict=false
             local reason
             if not DB.elixirs then reason="Elixirs disabled"
             elseif not allowed then reason="class filter"
@@ -203,17 +201,24 @@ local function itemData(bag,slot)
     if data.kind then return data end
 end
 local function updateView()
-    ns.UpdateItemCount(queue[1],count)
+    count:SetText(queue[1] and queue[1].count>1 and queue[1].count or "")
     ns.UpdateView(queue[1], #queue, DB, frame, icon, count, remain, InCombatLockdown(), questBadge)
 end
 local function rebuild()
     if InCombatLockdown() then return end
+    currentClass=select(2,UnitClass("player"));currentSpec=playerSpec();activeAuras=auras();local scrolls={};local bagTotals={}
+    for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do
+        local bi=ns.GetContainerItemInfo(bag,slot)
+        if bi and bi.itemID then
+            bagTotals[bi.itemID]=(bagTotals[bi.itemID] or 0)+(bi.stackCount or 1)
+            local sd=ns.ScrollItemIDs[bi.itemID];if sd then scrolls[#scrolls+1]=sd end
+        end
+    end end
+    carriedScrollRanks=ns.BestCarriedRanks(scrolls)
     local fresh={}
     for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local d=itemData(bag,slot); if d then fresh[#fresh+1]=d end end end
-    local totals={}
     for _,item in ipairs(fresh) do
-        if totals[item.itemID]==nil then totals[item.itemID]=ns.CountItemInBags(item.itemID) end
-        item.count=totals[item.itemID]
+        item.count=bagTotals[item.itemID] or 0
     end
     local foods={};for i=#fresh,1,-1 do if fresh[i].kind=="food" then foods[#foods+1]=table.remove(fresh,i) end end
     local best=ns.BestFood(foods)
@@ -227,7 +232,18 @@ local function rebuild()
         if tied then print("Clickables food tie -> smaller stack (total "..best.count..")") end
     end
     if best then fresh[#fresh+1]=best end
-    ns.SortQueue(fresh);queue=fresh;updateView()
+    local unique=ns.DedupeQueue(fresh,bagTotals);ns.SortQueue(unique,DB.priority);queue=unique;updateView()
+end
+local refreshPending=false
+local combatCountPending=false
+local function scheduleRebuild()
+    if InCombatLockdown() then
+        if not combatCountPending then combatCountPending=true;C_Timer.After(0.1,function() combatCountPending=false;if InCombatLockdown() then ns.UpdateItemCount(queue[1],count) end end) end
+        return
+    end
+    if refreshPending then return end
+    refreshPending=true
+    C_Timer.After(0.1,function() refreshPending=false;if not InCombatLockdown() then rebuild() end end)
 end
 local function position()
     if DB.positionVersion ~= 2 then
@@ -242,7 +258,8 @@ end
 local refreshIgnoredList
 frame:SetScript("OnDragStart",safe("drag start",function(self) if not DB.locked and not InCombatLockdown() then self:StartMoving() end end))
 frame:SetScript("OnDragStop",safe("drag stop",function(self) self:StopMovingOrSizing(); local p,_,_,x,y=self:GetPoint(); DB.point=p;DB.x=x;DB.y=y end))
-frame:SetScript("PreClick",safe("PreClick",function(self,button)
+frame:SetScript("PreClick",safe("PreClick",function(self,button,down)
+    if not ns.ShouldHandleClickPhase(down,GetCVarBool("ActionButtonUseKeyDown")) then return end
     if button=="RightButton" and IsAltKeyDown() and queue[1] and not InCombatLockdown() then
         local current=queue[1]
         local ignored=ns.ToggleIgnore(DB.ignored,current.itemID)
@@ -261,11 +278,24 @@ frame:SetScript("OnEnter",safe("tooltip",function(self)
     GameTooltip:AddLine("Click to use the next item",0.5,1,0.5); GameTooltip:AddLine("Alt+right-click to ignore",0.5,1,0.5); GameTooltip:Show()
 end))
 frame:SetScript("OnLeave",safe("tooltip hide",function() GameTooltip:Hide() end))
+local pendingItemInfo={}
+local function requestItemInfo(itemID,callback)
+    pendingItemInfo[itemID]=true
+    if C_Item and C_Item.RequestLoadItemDataByID then
+        C_Item.RequestLoadItemDataByID(itemID)
+        return true
+    end
+    local requested=ns.RequestItemLoad(itemID,function(...)
+        pendingItemInfo[itemID]=nil
+        if callback then callback(...) end
+    end)
+    if not requested then pendingItemInfo[itemID]=nil end
+    return requested
+end
 local function ignoredItemText(itemID)
     local name=ns.GetItemName(itemID)
     if name then return "|Hitem:"..itemID.."|h["..name.."]|h" end
-    if C_Item and C_Item.RequestLoadItemDataByID then C_Item.RequestLoadItemDataByID(itemID)
-    else ns.RequestItemLoad(itemID) end
+    requestItemInfo(itemID)
     return "item:"..itemID
 end
 local function options()
@@ -299,7 +329,7 @@ local function options()
     scroll:SetScript("OnSizeChanged",safe("options resize",function(self) scrollChild:SetWidth(math.max(1,self:GetWidth())) end))
     local empty=scrollChild:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
     empty:SetPoint("TOPLEFT",scrollChild,"TOPLEFT",4,-4)
-    empty:SetText("No ignored items. Alt+right-click the Clickables button to ignore what it’s showing.")
+    empty:SetText("No ignored items. Alt+right-click the Clickables button to ignore what itâ€™s showing.")
     empty:SetJustifyH("LEFT"); empty:SetWidth(360)
     local rows={}
     local function makeRow()
@@ -336,6 +366,7 @@ local function options()
         InterfaceOptions_AddCategory(panel)
     end
 end
+local clearExpires
 local function slashImpl(msg)
     local cmd,arg=msg:match("^(%S*)%s*(.-)$");cmd=cmd:lower()
     if cmd=="errors" then
@@ -343,31 +374,34 @@ local function slashImpl(msg)
     elseif cmd=="debug" then
         errorState.debug=not errorState.debug;print("Clickables debug mode: "..tostring(errorState.debug))
         local clicks=frame.GetRegisteredClicks and table.concat({frame:GetRegisteredClicks()},", ") or "AnyUp, AnyDown (configured)"
-        print("Clickables debug: type="..tostring(frame:GetAttribute("type"))..", item="..tostring(frame:GetAttribute("item"))..", type1="..tostring(frame:GetAttribute("type1"))..", item1="..tostring(frame:GetAttribute("item1"))..", ActionButtonUseKeyDown="..tostring(GetCVar and GetCVar("ActionButtonUseKeyDown"))..", clicks="..clicks)
+        print("Clickables debug: ActionButtonUseKeyDown="..tostring(GetCVar and GetCVar("ActionButtonUseKeyDown"))..", clicks="..clicks)
     elseif cmd=="lock" then DB.locked=true elseif cmd=="unlock" then DB.locked=false elseif cmd=="scale" then DB.scale=tonumber(arg) or DB.scale;frame:SetScale(DB.scale) elseif cmd=="list" then
         for id in pairs(DB.ignored) do
             local itemID=id
             local name=ns.GetItemName(itemID)
             local link=name and ("|Hitem:"..itemID.."|h["..name.."]|h") or ("item:"..itemID)
             print("Clickables ignored: |T"..tostring(ns.GetItemIcon(itemID) or 134400)..":16|t "..link)
-            if not name then ns.RequestItemLoad(itemID,safe("item load callback",function(loadedName,texture) if loadedName then print("Clickables ignored: |T"..tostring(texture or 134400)..":16|t |Hitem:"..itemID.."|h["..loadedName.."]|h") end end)) end
+            if not name then requestItemInfo(itemID,safe("item load callback",function(loadedName,texture) if loadedName then print("Clickables ignored: |T"..tostring(texture or 134400)..":16|t |Hitem:"..itemID.."|h["..loadedName.."]|h") end end)) end
         end
-    elseif cmd=="clear" then if not DB.clearUntil or GetTime()>DB.clearUntil then DB.clearUntil=GetTime()+5;print("Clickables: run /clickables clear again within 5 seconds") else wipe(DB.ignored);DB.clearUntil=nil;print("Clickables: ignore list cleared");if refreshIgnoredList then refreshIgnoredList() end end end;rebuild()
+    elseif cmd=="clear" then local now=GetTime(); if not clearExpires or now>clearExpires then clearExpires=now+5;print("Clickables: run /clickables clear again within 5 seconds") else wipe(DB.ignored);clearExpires=nil;print("Clickables: ignore list cleared");if refreshIgnoredList then refreshIgnoredList() end end end;rebuild()
 end
 local slash=safe("slash command",slashImpl)
 SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
 local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED");events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 events:RegisterEvent("UNIT_AURA");events:RegisterEvent("QUEST_LOG_UPDATE");events:RegisterEvent("QUEST_REMOVED")
+if C_EventUtils and C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("PLAYER_TALENT_UPDATE") then events:RegisterEvent("PLAYER_TALENT_UPDATE") end
+events:RegisterEvent("CHARACTER_POINTS_CHANGED")
 events:SetScript("OnEvent",safe("event handler",function(_,event,name)
-    if event=="GET_ITEM_INFO_RECEIVED" then if refreshIgnoredList then refreshIgnoredList() end
-    elseif event=="ADDON_LOADED" and name==addonName then DB=ns.MergeDefaults(ClickablesDB);ClickablesDB=DB;position();options();rebuild()
-    elseif event=="PLAYER_REGEN_ENABLED" then rebuild()
-    elseif event=="UNIT_AURA" and name=="player" and not InCombatLockdown() then rebuild()
-    elseif event=="QUEST_LOG_UPDATE" or event=="QUEST_ACCEPTED" or event=="QUEST_REMOVED" then ns.MarkQuestLogReady(questLogState);rebuild()
+    if event=="GET_ITEM_INFO_RECEIVED" then
+        local itemID=tonumber(name) or name;local relevant=pendingItemInfo[itemID]
+        if not relevant then for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local info=ns.GetContainerItemInfo(bag,slot);if info and info.itemID==itemID then relevant=true;break end end;if relevant then break end end end
+        if relevant then itemProperties[itemID]=nil;pendingItemInfo[itemID]=nil;if refreshIgnoredList then refreshIgnoredList() end;scheduleRebuild() end
+    elseif event=="ADDON_LOADED" and name==addonName then DB=ns.MergeDefaults(ClickablesDB);ClickablesDB=DB;position();options();scheduleRebuild()
+    elseif event=="PLAYER_REGEN_ENABLED" then scheduleRebuild()
+    elseif event=="UNIT_AURA" and name=="player" then scheduleRebuild()
+    elseif event=="QUEST_LOG_UPDATE" or event=="QUEST_ACCEPTED" or event=="QUEST_REMOVED" then ns.MarkQuestLogReady(questLogState);scheduleRebuild()
     elseif event=="BAG_UPDATE_DELAYED" then
-        ns.UpdateItemCount(queue[1],count)
-        if not InCombatLockdown() then rebuild() end
-    elseif event=="PLAYER_ENTERING_WORLD" then rebuild() end
+        scheduleRebuild()
+    elseif event=="PLAYER_TALENT_UPDATE" or event=="CHARACTER_POINTS_CHANGED" then scheduleRebuild()
+    elseif event=="PLAYER_ENTERING_WORLD" then scheduleRebuild() end
 end))
-
-

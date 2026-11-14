@@ -41,8 +41,27 @@ end)
 test("defaults merge preserves saved values",function()
  local d={scale=1.4,ignored={[7]=true}};assert(ns.MergeDefaults(d)==d);assert(d.scale==1.4 and d.locked==false and d.ignored[7])
 end)
+test("defaults deep-copy nested tables and validate settings lists",function()
+ local d=ns.MergeDefaults({priority={"food","food","bad"},ignored="bad"})
+ assert(d.settingsVersion==2 and d.ignored and #d.priority==5 and d.priority[1]=="food")
+ d.priority[1]="changed";assert(ns.Defaults.priority[1]=="quest")
+ local a=ns.MergeDefaults({});a.priority[1]="changed";local b=ns.MergeDefaults({});assert(b.priority[1]=="quest")
+ local laterDefaults={settingsVersion=3,priority={"quest","openable","elixir","scroll","food"},ignored={},future={nested={values={11,22}}}}
+ local oldSaved={scale=1.25};local migrated=ns.MergeDefaults(oldSaved,laterDefaults)
+ migrated.future.nested.values[1]=99
+ assert(laterDefaults.future.nested.values[1]==11,"new nested defaults must not alias the defaults table")
+ local second=ns.MergeDefaults({},laterDefaults)
+ assert(second.future.nested.values[1]==11,"new SavedVariables must receive an independent deep copy")
+end)
 test("ignore toggling",function()
  local ignored={};assert(ns.ToggleIgnore(ignored,9)==true and ignored[9]);assert(ns.ToggleIgnore(ignored,9)==false and not ignored[9])
+end)
+test("Alt right-click toggle runs only on the configured click phase",function()
+ for _,keyDown in ipairs({false,true}) do
+  local calls=0
+  for _,down in ipairs({false,true}) do if ns.ShouldHandleClickPhase(down,keyDown) then calls=calls+1 end end
+  assert(calls==1)
+ end
 end)
 test("ignored item names prefer C_Item and fall back to GetItemInfo",function()
  local oldCItem,oldInfo=C_Item,GetItemInfo
@@ -62,8 +81,8 @@ test("updateView works when GetItemIcon is unavailable",function()
  local count={SetText=function(_,v)view.count=v end}
  local remain={SetText=function(_,v)view.remain=v end}
  ns.UpdateView({itemID=42,bag=0,slot=3,count=2},2,{hideWhenEmpty=false},frame,icon,count,remain,false)
- assert(view.texture=="icon-42" and view.attributes.type=="item" and view.attributes.type1=="item")
- assert(view.attributes.item=="item:42" and view.attributes.item1=="item:42")
+ assert(view.texture=="icon-42" and view.attributes.type==nil and view.attributes.type1=="item")
+ assert(view.attributes.item==nil and view.attributes.item1=="item:42")
  assert(view.count==2 and view.remain=="+1 queued" and view.shown)
  ns.UpdateView(nil,0,{hideWhenEmpty=false},frame,icon,count,remain,false)
  assert(view.attributes.item==nil and view.attributes.item1==nil)
@@ -161,9 +180,62 @@ test("stat score tie favors smaller total count then smaller slot stack",functio
  local smallerSlot={itemID=3,score=2,count=5,slotCount=2};local largerSlot={itemID=4,score=2,count=5,slotCount=4}
  assert(ns.BestFood({largerSlot,smallerSlot})==smallerSlot)
 end)
-test("battle and guardian elixir conflicts",function()
- assert(ns.ElixirConflict({{category="battle"}},"battle"))
- assert(not ns.ElixirConflict({{category="guardian"}},"battle"))
+test("elixir aura uses spell ID or exact fallback",function()
+ local elixir={aura="Greater Defense",auraSpellID=11349}
+ assert(ns.ElixirAuraActive({{spellID=11349,name="Armor"}},elixir))
+ assert(not ns.ElixirAuraActive({{spellID=1,name="Greater Defense"}},elixir))
+ assert(ns.ElixirAuraActive({{name="Greater Defense"}},{aura="Greater Defense"}))
+ assert(not ns.ElixirConflict({{category="battle"}},"battle"))
+end)
+test("Forever elixir aura spell IDs",function()
+ local expected={
+  {2454,2367,"https://www.wowhead.com/classic/spell=2367/lions-strength"}, -- Lion's Strength
+  {5997,673,"https://www.wowhead.com/classic/spell=673/armor"}, -- Minor Defense
+  {3389,3220,"https://www.wowhead.com/classic/spell=3220/defense"}, -- Defense
+  {3390,3160,"https://www.wowhead.com/classic/spell=3160/lesser-agility"}, -- Lesser Agility
+  {3383,3166,"https://www.wowhead.com/classic/spell=3166/wisdom"}, -- Wisdom
+  {3825,3593,"https://www.wowhead.com/classic/spell=3593/fortitude"}, -- Fortitude
+  {8949,11328,"https://www.wowhead.com/classic/spell=11328/agility"}, -- Agility
+  {9179,11396,"https://www.wowhead.com/classic/spell=11396/greater-intellect"}, -- Greater Intellect
+  {9206,11405,"https://www.wowhead.com/classic/spell=11405/giants"}, -- Giants
+  {13452,17538,"https://www.wowhead.com/classic/spell=17538/mongoose"}, -- Mongoose
+  {9187,11334,"https://www.wowhead.com/classic/spell=11334/greater-agility"}, -- Greater Agility
+  {8951,11349,"https://www.wowhead.com/classic/spell=11349/greater-defense"}, -- Greater Defense
+ }
+ assert(#expected==12)
+ for _,ref in ipairs(expected) do assert(ns.ElixirItemIDs[ref[1]].auraSpellID==ref[2],"elixir aura ID mismatch: "..ref[3]) end
+ local total=0;for _ in pairs(ns.ElixirItemIDs) do total=total+1 end;assert(total==#expected)
+end)
+test("scroll aura spell IDs cover every rank",function()
+ local expected={
+  {"strength",1,8118,"https://www.wowhead.com/classic/spell=8118/strength"}, -- Strength I
+  {"strength",2,8119,"https://www.wowhead.com/classic/spell=8119/strength"}, -- Strength II
+  {"strength",3,8120,"https://www.wowhead.com/classic/spell=8120/strength"}, -- Strength III
+  {"strength",4,12179,"https://www.wowhead.com/classic/spell=12179/strength"}, -- Strength IV
+  {"agility",1,8115,"https://www.wowhead.com/classic/spell=8115/agility"}, -- Agility I
+  {"agility",2,8116,"https://www.wowhead.com/classic/spell=8116/agility"}, -- Agility II
+  {"agility",3,8117,"https://www.wowhead.com/classic/spell=8117/agility"}, -- Agility III
+  {"agility",4,12174,"https://www.wowhead.com/classic/spell=12174/agility"}, -- Agility IV
+  {"intellect",1,8096,"https://www.wowhead.com/classic/spell=8096/intellect"}, -- Intellect I
+  {"intellect",2,8097,"https://www.wowhead.com/classic/spell=8097/intellect"}, -- Intellect II
+  {"intellect",3,8098,"https://www.wowhead.com/classic/spell=8098/intellect"}, -- Intellect III
+  {"intellect",4,12176,"https://www.wowhead.com/classic/spell=12176/intellect"}, -- Intellect IV
+  {"spirit",1,8112,"https://www.wowhead.com/classic/spell=8112/spirit"}, -- Spirit I
+  {"spirit",2,8113,"https://www.wowhead.com/classic/spell=8113/spirit"}, -- Spirit II
+  {"spirit",3,8114,"https://www.wowhead.com/classic/spell=8114/spirit"}, -- Spirit III
+  {"spirit",4,12177,"https://www.wowhead.com/classic/spell=12177/spirit"}, -- Spirit IV
+  {"stamina",1,8099,"https://www.wowhead.com/classic/spell=8099/stamina"}, -- Stamina I
+  {"stamina",2,8100,"https://www.wowhead.com/classic/spell=8100/stamina"}, -- Stamina II
+  {"stamina",3,8101,"https://www.wowhead.com/classic/spell=8101/stamina"}, -- Stamina III
+  {"stamina",4,12178,"https://www.wowhead.com/classic/spell=12178/stamina"}, -- Stamina IV
+  {"armor",1,8091,"https://www.wowhead.com/classic/spell=8091/protection"}, -- Protection I
+  {"armor",2,8094,"https://www.wowhead.com/classic/spell=8094/protection"}, -- Protection II
+  {"armor",3,8095,"https://www.wowhead.com/classic/spell=8095/protection"}, -- Protection III
+  {"armor",4,12175,"https://www.wowhead.com/classic/spell=12175/protection"}, -- Protection IV
+ }
+ for _,ref in ipairs(expected) do local aura=ns.ScrollAuraSpellIDs[ref[3]];assert(aura and aura.stat==ref[1] and aura.rank==ref[2],"scroll aura ID mismatch: "..ref[4]) end
+ local total=0;for _ in pairs(ns.ScrollAuraSpellIDs) do total=total+1 end;assert(total==#expected)
+ assert(ns.ScrollAuraSpellIDs[12174].rank==4 and ns.ScrollAuraSpellIDs[12174].stat=="agility")
 end)
 test("full queue priority order",function()
  local q={{kind="food",bag=0,slot=1},{kind="scroll",bag=0,slot=2},{kind="elixir",bag=0,slot=3},{kind="openable",bag=0,slot=4},{kind="quest",bag=0,slot=5}}
@@ -173,6 +245,21 @@ test("scores order candidates within their queue category",function()
  local q={{kind="elixir",score=2,bag=0,slot=1},{kind="elixir",score=5,bag=1,slot=1},{kind="scroll",score=20,bag=0,slot=2}}
  ns.SortQueue(q)
  assert(q[1].kind=="elixir" and q[1].score==5 and q[2].kind=="elixir" and q[3].kind=="scroll")
+end)
+test("shared comparator favors smaller total and single stack counts",function()
+ local q={{kind="elixir",score=3,count=8,slotCount=1},{kind="elixir",score=3,count=2,slotCount=4},{kind="elixir",score=3,count=2,slotCount=1}}
+ ns.SortQueue(q);assert(q[1].slotCount==1 and q[2].slotCount==4 and q[3].count==8)
+ local ordered={{kind="elixir",score=10},{kind="food",score=1}}
+ ns.SortQueue(ordered,{"food","quest","openable","elixir","scroll"});assert(ordered[1].kind=="food")
+end)
+test("adjacent carried scroll ranks suppress all lower ranks",function()
+ local ranks=ns.BestCarriedRanks({{stat="strength",rank=2},{stat="strength",rank=3},{stat="agility",rank=1}})
+ assert(ranks.strength==3 and ranks.agility==1 and ranks.intellect==nil)
+ assert(ranks.strength>2 and ranks.strength>1)
+end)
+test("queue candidates deduplicate by item ID while preserving total count",function()
+ local q=ns.DedupeQueue({{itemID=5,count=2,score=1},{itemID=5,count=2,score=3},{itemID=6,count=1}}, {[5]=7,[6]=1})
+ assert(#q==2 and q[1].count==7 and q[1].score==3 and q[2].itemID==6)
 end)
 test("Well Fed active skips food",function()
  assert(ns.FoodAuraActive({{name="Well Fed"}}))
@@ -206,6 +293,9 @@ test("safe call logs, throttles, caps, and clears",function()
  local function run(t) ns.SafeCall(s,"test",function() error("boom") end,t,function(m)messages[#messages+1]=m end) end
  run(1);run(2);run(31);assert(#messages==2 and #s.errors==3 and s.errors[1].stack~="")
  for i=1,9 do run(60+i*30) end
- assert(#s.errors==10);s.errors={};assert(#s.errors==0)
+ assert(#s.errors==10);for i=1,500 do ns.SafeCall(s,"unique",function()error("unique-"..i)end,1000+i,function()end) end
+ local throttleCount=0;for _ in pairs(s.last)do throttleCount=throttleCount+1 end;assert(throttleCount<=100,"throttle map must stay bounded")
+ s.errors={};assert(#s.errors==0)
 end)
+assert(loadfile("tests/mock_clickables.lua"))()(ns,test)
 print("PASS "..passed.." tests")
