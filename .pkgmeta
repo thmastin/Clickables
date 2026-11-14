@@ -9,6 +9,10 @@ ignore:
   - .github/
   - .gitignore
   - .pkgmeta
+  - .vscode/
+  - .idea/
+  - '*.code-workspace'
+  - '*.ps1'
   - README.md
   - tests/
   - media/*.png

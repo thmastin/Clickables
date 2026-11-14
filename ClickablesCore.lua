@@ -44,7 +44,22 @@ ns.ClassScrollRules = {
     HUNTER={allow={stamina=true,armor=true,agility=true,intellect=true,attack_power=true}},
     PALADIN={casterTabs={[1]=true},melee={strength=true,agility=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
     SHAMAN={casterTabs={[1]=true,[3]=true},melee={strength=true,agility=true,intellect=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
-    DRUID={casterTabs={[3]=true},melee={strength=true,agility=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
+    DRUID={casterTabs={[1]=true,[3]=true},melee={strength=true,agility=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
+}
+-- Baseline weights are AP-equivalent. Class defaults apply before a character
+-- has spent talent points; hybrid specs override them once their tree is known.
+ns.StatWeightRules = {
+    baseline={unknown=0,stamina=0.25,attack_power=1},
+    classDefaults={
+        WARRIOR={strength=2}, ROGUE={agility=2}, HUNTER={agility=2},
+        MAGE={intellect=2,spirit=2}, WARLOCK={intellect=2,spirit=2}, PRIEST={intellect=2,spirit=2},
+        PALADIN={strength=2}, SHAMAN={strength=2}, DRUID={strength=2,agility=2},
+    },
+    specs={
+        PALADIN={melee={strength=2},caster={intellect=2,spirit=2}},
+        SHAMAN={melee={strength=2},caster={intellect=2,spirit=2}},
+        DRUID={melee={strength=2,agility=2},caster={intellect=2,spirit=2}},
+    },
 }
 function ns.NewErrorState()
     return {errors={},last={},debug=false}
@@ -81,6 +96,22 @@ function ns.DominantTalentTab(points)
     end
     return best
 end
+function ns.StatWeight(class,spec,stat)
+    local rules=ns.StatWeightRules
+    local classSpecs=class and rules.specs[class]
+    local specWeights=classSpecs and spec and classSpecs[spec]
+    if specWeights then return specWeights[stat] or rules.baseline[stat] or rules.baseline.unknown end
+    local classWeights=class and rules.classDefaults[class]
+    return (classWeights and classWeights[stat]) or rules.baseline[stat] or rules.baseline.unknown
+end
+function ns.StatScore(stat,amount,class,spec)
+    return (tonumber(amount) or 0)*ns.StatWeight(class,spec,stat)
+end
+function ns.ItemStatScore(stats,class,spec)
+    local score=0
+    for _,entry in ipairs(stats or {}) do score=score+ns.StatScore(entry.stat,entry.bonus,class,spec) end
+    return score
+end
 function ns.ActiveRank(auras, stat)
     local rank=0
     for _,a in ipairs(auras or {}) do if a.stat==stat and (a.rank or 1)>rank then rank=a.rank or 1 end end
@@ -111,6 +142,13 @@ function ns.FoodTooltip(use)
     for _,entry in ipairs(found) do if entry.bonus>bonus then bonus=entry.bonus end end
     return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil)}
 end
+function ns.FoodData(itemID,use)
+    local food=ns.FoodTooltip(use)
+    if food then return food end
+    local mapped=ns.FoodItemIDs[itemID]
+    if not mapped then return nil end
+    return {stats={{stat=mapped.stat,bonus=mapped.bonus}},bonus=mapped.bonus,stat=mapped.stat}
+end
 function ns.JoinTooltipLines(lines)
     return table.concat(lines or {}," ")
 end
@@ -127,7 +165,9 @@ end
 function ns.BestFood(items)
     local best
     for _,item in ipairs(items or {}) do
-        if not best or (item.bonus or 0)>(best.bonus or 0) or ((item.bonus or 0)==(best.bonus or 0) and (item.count or 1)>(best.count or 1)) then best=item end
+        local score=item.score or item.bonus or 0
+        local bestScore=best and (best.score or best.bonus or 0) or nil
+        if not best or score>bestScore or (score==bestScore and (item.count or 1)>(best.count or 1)) then best=item end
     end
     return best
 end
@@ -177,6 +217,24 @@ end
 function ns.GetContainerNumSlots(bag)
     if C_Container and C_Container.GetContainerNumSlots then return C_Container.GetContainerNumSlots(bag) end; if GetContainerNumSlots then return GetContainerNumSlots(bag) end; return 0
 end
+function ns.CountItemInBags(itemID)
+    if not itemID then return 0 end
+    local total=0
+    for bag=0,(NUM_BAG_SLOTS or 0) do
+        for slot=1,ns.GetContainerNumSlots(bag) do
+            local info=ns.GetContainerItemInfo(bag,slot)
+            if info and info.itemID==itemID then total=total+(info.stackCount or 1) end
+        end
+    end
+    return total
+end
+function ns.UpdateItemCount(current,countText)
+    if not current then countText:SetText("");return 0 end
+    local total=ns.CountItemInBags(current.itemID)
+    current.count=total
+    countText:SetText(total>1 and total or "")
+    return total
+end
 function ns.UpdateView(current,queueLength,db,frame,icon,count,remain,inCombat)
     if inCombat then return end
     frame:SetAttribute("type","item");frame:SetAttribute("type1","item")
@@ -207,6 +265,14 @@ function ns.QuestDecision(questInfo,tooltipQuest,state)
 end
 function ns.SortQueue(items)
     local priority={quest=1,openable=2,elixir=3,scroll=4,food=5}
-    table.sort(items,function(a,b) local pa,pb=priority[a.kind] or 99,priority[b.kind] or 99;if pa~=pb then return pa<pb end;if a.bag~=b.bag then return a.bag<b.bag end;return a.slot<b.slot end);return items
+    table.sort(items,function(a,b)
+        local pa,pb=priority[a.kind] or 99,priority[b.kind] or 99
+        if pa~=pb then return pa<pb end
+        local sa,sb=a.score or 0,b.score or 0
+        if sa~=sb then return sa>sb end
+        if (a.count or 1)~=(b.count or 1) then return (a.count or 1)>(b.count or 1) end
+        if a.bag~=b.bag then return a.bag<b.bag end
+        return a.slot<b.slot
+    end);return items
 end
 return ns

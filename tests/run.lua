@@ -69,6 +69,25 @@ test("updateView works when GetItemIcon is unavailable",function()
  assert(view.attributes.item==nil and view.attributes.item1==nil)
  GetItemIcon,GetItemInfo,C_Item=oldIcon,oldInfo,oldCItem
 end)
+test("button count sums item stacks across bags and hides one",function()
+ local oldContainer,oldSlots=C_Container,NUM_BAG_SLOTS
+ local bags={
+  [0]={{itemID=77,stackCount=2},{itemID=77,stackCount=3}},
+  [1]={{itemID=77,stackCount=4}},
+ }
+ NUM_BAG_SLOTS=1
+ C_Container={
+  GetContainerNumSlots=function(bag)return #(bags[bag] or {}) end,
+  GetContainerItemInfo=function(bag,slot)return bags[bag] and bags[bag][slot] end,
+ }
+ local shown
+ local widget={SetText=function(_,v)shown=v end}
+ local current={itemID=77,count=1}
+ assert(ns.UpdateItemCount(current,widget)==9 and current.count==9 and shown==9)
+ bags[0]={{itemID=77,stackCount=1}};bags[1]={}
+ assert(ns.UpdateItemCount(current,widget)==1 and current.count==1 and shown=="")
+ C_Container,NUM_BAG_SLOTS=oldContainer,oldSlots
+end)
 test("buff rank comparison keeps stronger active buffs",function()
  assert(ns.ActiveRank({{stat="agility",rank=2},{stat="agility",rank=4}},"agility")==4)
  assert(ns.ActiveRank({{stat="spirit",rank=1}},"agility")==0)
@@ -107,6 +126,26 @@ test("zero talent points leave hybrid spec unknown",function()
  assert(ns.ClassAllows("SHAMAN",nil,"attack_power",false))
  assert(ns.ClassAllows("SHAMAN",nil,"intellect",false))
  assert(not ns.ClassAllows("MAGE",nil,"attack_power",false))
+ assert(ns.StatWeight("SHAMAN",nil,"strength")==2)
+ assert(ns.StatWeight("SHAMAN",nil,"attack_power")==1)
+end)
+test("Enhancement Shaman weights ribs and smallfish equally",function()
+ local ribs=ns.FoodData(2888,nil)
+ local fish=ns.FoodData(6290,nil)
+ ribs.score=ns.ItemStatScore(ribs.stats,"SHAMAN","melee");ribs.count=1
+ fish.score=ns.ItemStatScore(fish.stats,"SHAMAN","melee");fish.count=6
+ assert(ribs.score==2 and fish.score==2)
+ assert(ns.BestFood({ribs,fish})==fish)
+end)
+test("Rogue Agility beats Attack Power",function()
+ assert(ns.StatScore("agility",1,"ROGUE",nil)>ns.StatScore("attack_power",1,"ROGUE",nil))
+end)
+test("Caster Intellect beats Stamina baseline",function()
+ assert(ns.StatScore("intellect",1,"MAGE",nil)>ns.StatScore("stamina",1,"MAGE",nil))
+end)
+test("stat score tie uses total item count",function()
+ local a={itemID=1,score=2,count=2};local b={itemID=2,score=2,count=9}
+ assert(ns.BestFood({a,b})==b)
 end)
 test("battle and guardian elixir conflicts",function()
  assert(ns.ElixirConflict({{category="battle"}},"battle"))
@@ -115,6 +154,11 @@ end)
 test("full queue priority order",function()
  local q={{kind="food",bag=0,slot=1},{kind="scroll",bag=0,slot=2},{kind="elixir",bag=0,slot=3},{kind="openable",bag=0,slot=4},{kind="quest",bag=0,slot=5}}
  ns.SortQueue(q);assert(q[1].kind=="quest" and q[2].kind=="openable" and q[3].kind=="elixir" and q[4].kind=="scroll" and q[5].kind=="food")
+end)
+test("scores order candidates within their queue category",function()
+ local q={{kind="elixir",score=2,bag=0,slot=1},{kind="elixir",score=5,bag=1,slot=1},{kind="scroll",score=20,bag=0,slot=2}}
+ ns.SortQueue(q)
+ assert(q[1].kind=="elixir" and q[1].score==5 and q[2].kind=="elixir" and q[3].kind=="scroll")
 end)
 test("Well Fed active skips food",function()
  assert(ns.FoodAuraActive({{name="Well Fed"}}))

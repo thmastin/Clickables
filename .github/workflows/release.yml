@@ -15,6 +15,8 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
       - name: Package and release addon
+        # Packager maps TOC Interface 16001 to the Forever upload game version.
         uses: BigWigsMods/packager@v2
         env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
