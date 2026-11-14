@@ -6,24 +6,24 @@ All notable changes to Clickables are documented here.
 
 ### Fixed
 - Reuse one hidden bag-slot scan tooltip, cache parsed item properties, and refresh cached data when item information arrives.
-- Make Alt+right-click ignore toggles run once, with secure item use limited to left-click.
+- Make Alt+right-click ignore toggles run once, with secure item use limited to left-click; hide secure attributes from debug output.
 - Match tracked elixir buffs by spell ID, remove battle/guardian exclusivity, and skip only an already active matching elixir buff. This stacking behavior needs an in-game check on Forever.
-- Deduplicate queued items, suppress all lower carried scroll ranks, and use one score/count/stack comparator with saved priority order.
+- Deduplicate queued items, suppress all lower carried scroll ranks, and use one score/count/stack comparator with saved priority order; ties prefer the smaller total, then the smaller stack, in every category.
 - Batch queue refreshes from bags, player auras, quests, talents, and item-data events; keep combat counts live with burst batching.
 - Deep-copy and validate saved settings, cap the error throttle map, and fix the `/clickables clear` confirmation timer.
 - Correct Lion's Strength to Strength, Elixir of Wisdom to Intellect, and Greater Defense to Armor.
 - Removed Strong Troll's Blood from the stat elixir ranking because its effect is health regeneration, not a tracked stat.
 
 ### Added
-- Added the quest `!` badge for new quest starters, skipped quest starters already active in the quest log, preferred smaller stacks on ties, and displayed `+N queued`.
+- Added tests and documentation for mocked client coverage and in-game-only checks.
 
 ## [1.2.0] - 2026-11-13
 
 ### Added
 - Buff food queue with Well Fed and eating aura checks, class/spec filtering, and best bonus/stack selection.
 - Food category option and queue priority after quest starters, openables, elixirs, and scrolls.
-- Quest `!` badge for quest starters and skipping starters for quests already active.
-- Smaller-stack tie breaking and the `+N queued` queue indicator.
+- Quest `!` badge for new quest starters; skip starters for quests already active or completed.
+- Smaller-stack food ties and the `+N queued` queue indicator.
 - Stat-weighted ranking for food, scrolls, and elixirs, plus total same-item counts across bags.
 - GitHub Actions CI for the local test suite and Lua syntax checks.
 

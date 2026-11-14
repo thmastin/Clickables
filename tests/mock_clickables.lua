@@ -55,6 +55,14 @@ return function(ns,test)
     GetWidth=function()return 420 end,
     GetHeight=function()return 320 end,
     GetPoint=function()return "CENTER",nil,"CENTER",0,-120 end,
+    SetSize=function()end,SetMovable=function()end,EnableMouse=function()end,RegisterForDrag=function()end,
+    SetBackdrop=function()end,SetBackdropColor=function()end,SetAllPoints=function()end,SetPoint=function()end,
+    SetAlpha=function()end,SetScale=function()end,ClearAllPoints=function()end,StartMoving=function()end,
+    StopMovingOrSizing=function()end,SetMinMaxValues=function()end,SetValueStep=function()end,SetValue=function()end,
+    SetWidth=function()end,SetHeight=function()end,SetJustifyH=function()end,SetScrollChild=function()end,
+    SetVerticalScroll=function()end,
+    SetOwner=function()end,SetHyperlink=function()end,AddLine=function()end,
+    SetTexture=function(self,value)self.texture=value end,
     CreateTexture=function(self) return widget("Texture") end,
     CreateFontString=function(self,_,_,template)
      local fs=widget("FontString");fs.template=template
@@ -74,7 +82,7 @@ return function(ns,test)
    }
    setmetatable(obj,{__index=function(self,key)
     if methods[key]then return methods[key]end
-    return function()end
+     error("unknown mock widget method: "..tostring(key).." on "..tostring(self.kind),2)
    end})
    return obj
   end
@@ -116,6 +124,21 @@ return function(ns,test)
    c.button.scripts.PreClick(c.button,"RightButton",true)
    local ignoredCount=0;for _,id in ipairs({5523,5524})do if env.ClickablesDB.ignored[id]then ignoredCount=ignoredCount+1 end end
    assert(ignoredCount==1 and env.ClickablesDB.ignored[5523]and not env.ClickablesDB.ignored[5524],"one physical click must ignore only the original queue item")
+  end
+ end)
+
+ test("priority setting controls mixed-kind rebuild order",function()
+  local c=mockClient({priority={"food","quest","openable","elixir","scroll"}},
+   {[0]={{itemID=2454,stackCount=1},{itemID=2888,stackCount=1}}},
+   {[0]={[2]={"Use: Eat to become Well Fed and gain 1 Strength for 15 min."}}})
+  c:load();assert(c.button:GetAttribute("item1")=="item:2888","saved priority should put food before elixir")
+ end)
+
+ test("ignored food and scroll items are skipped by rebuild",function()
+  for _,itemID in ipairs({2888,954})do
+   local c=mockClient({ignored={[itemID]=true}}, {[0]={{itemID=itemID,stackCount=1}}},
+    {[0]={[1]={"Use: Eat to become Well Fed and gain 1 Strength for 15 min."}}})
+   c:load();assert(c.button:GetAttribute("item1")==nil,"ignored item must not enter queue: "..itemID)
   end
  end)
 
@@ -177,8 +200,40 @@ return function(ns,test)
  test("rebuild chooses highest carried scroll and suppresses buffed rank IV by ID",function()
   local c=mockClient(nil,{[0]={{itemID=954,stackCount=1},{itemID=2289,stackCount=1}}});c:load()
   assert(c.button:GetAttribute("item1")=="item:2289","Rank I should be hidden when only Rank II is also carried")
+  assert(c.button.remain.text=="","only Rank II should remain queued")
   local buffed=mockClient(nil,{[0]={{itemID=10309,stackCount=1}}},nil,{auras={{name="Agility",spellID=12174}}});buffed:load()
   assert(buffed.button:GetAttribute("item1")==nil,"Rank IV agility aura should suppress Scroll of Agility IV by spell ID")
+ end)
+
+ test("Alt right-click during combat does not change ignore list",function()
+  local c,env=mockClient(nil,{[0]={{itemID=5523,stackCount=1},{itemID=5524,stackCount=1}}});c:load()
+  c.combat=true;c.alt=true;c.keyDown=true;c.button.scripts.PreClick(c.button,"RightButton",true)
+  assert(not env.ClickablesDB.ignored[5523] and not env.ClickablesDB.ignored[5524])
+ end)
+
+ test("non-player UNIT_AURA does not schedule rebuild",function()
+  local c=mockClient();c:load();local baseline=c.scanCalls
+  c:fire("UNIT_AURA","target");c:flush();assert(c.scanCalls==baseline)
+ end)
+
+ test("debug output omits secure attributes and count hides one",function()
+  local c,env=mockClient();c:load()
+  assert(c.button.count.text=="")
+  env.SlashCmdList.CLICKABLES("debug")
+  for _,line in ipairs(c.printed)do assert(not line:find("type1=",1,true) and not line:find("item1=",1,true),"debug must omit plain secure attributes") end
+ end)
+
+ test("mock widgets reject unknown API methods",function()
+  local c=mockClient();local ok,err=pcall(function()c.button.SetWidht(c.button,10)end)
+  assert(not ok and tostring(err):find("unknown mock widget method",1,true))
+ end)
+
+ test("errors clear slash command empties the error history",function()
+  local c,env=mockClient(nil,{[0]={{itemID=5523,stackCount=1}}});c:load();c.alt=true;c.keyDown=true
+  local original=env.C_Item.GetItemNameByID;env.C_Item.GetItemNameByID=function()error("lookup failure")end
+  c.button.scripts.PreClick(c.button,"RightButton",true);env.C_Item.GetItemNameByID=original
+  env.SlashCmdList.CLICKABLES("errors clear")
+  local before=#c.printed;env.SlashCmdList.CLICKABLES("errors");assert(#c.printed==before,"cleared errors should print nothing")
  end)
 
  test("rebuild suppresses matching elixir spell ID but ignores unrelated intellect and fortitude buffs",function()

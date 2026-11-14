@@ -374,7 +374,7 @@ local function slashImpl(msg)
     elseif cmd=="debug" then
         errorState.debug=not errorState.debug;print("Clickables debug mode: "..tostring(errorState.debug))
         local clicks=frame.GetRegisteredClicks and table.concat({frame:GetRegisteredClicks()},", ") or "AnyUp, AnyDown (configured)"
-        print("Clickables debug: type1="..tostring(frame:GetAttribute("type1"))..", item1="..tostring(frame:GetAttribute("item1"))..", ActionButtonUseKeyDown="..tostring(GetCVar and GetCVar("ActionButtonUseKeyDown"))..", clicks="..clicks)
+        print("Clickables debug: ActionButtonUseKeyDown="..tostring(GetCVar and GetCVar("ActionButtonUseKeyDown"))..", clicks="..clicks)
     elseif cmd=="lock" then DB.locked=true elseif cmd=="unlock" then DB.locked=false elseif cmd=="scale" then DB.scale=tonumber(arg) or DB.scale;frame:SetScale(DB.scale) elseif cmd=="list" then
         for id in pairs(DB.ignored) do
             local itemID=id

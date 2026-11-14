@@ -249,7 +249,8 @@ end)
 test("shared comparator favors smaller total and single stack counts",function()
  local q={{kind="elixir",score=3,count=8,slotCount=1},{kind="elixir",score=3,count=2,slotCount=4},{kind="elixir",score=3,count=2,slotCount=1}}
  ns.SortQueue(q);assert(q[1].slotCount==1 and q[2].slotCount==4 and q[3].count==8)
- ns.SortQueue(q,{"food","quest","openable","elixir","scroll"});assert(q[1].kind=="elixir")
+ local ordered={{kind="elixir",score=10},{kind="food",score=1}}
+ ns.SortQueue(ordered,{"food","quest","openable","elixir","scroll"});assert(ordered[1].kind=="food")
 end)
 test("adjacent carried scroll ranks suppress all lower ranks",function()
  local ranks=ns.BestCarriedRanks({{stat="strength",rank=2},{stat="strength",rank=3},{stat="agility",rank=1}})
@@ -292,7 +293,9 @@ test("safe call logs, throttles, caps, and clears",function()
  local function run(t) ns.SafeCall(s,"test",function() error("boom") end,t,function(m)messages[#messages+1]=m end) end
  run(1);run(2);run(31);assert(#messages==2 and #s.errors==3 and s.errors[1].stack~="")
  for i=1,9 do run(60+i*30) end
- assert(#s.errors==10);s.errors={};assert(#s.errors==0)
+ assert(#s.errors==10);for i=1,500 do ns.SafeCall(s,"unique",function()error("unique-"..i)end,1000+i,function()end) end
+ local throttleCount=0;for _ in pairs(s.last)do throttleCount=throttleCount+1 end;assert(throttleCount<=100,"throttle map must stay bounded")
+ s.errors={};assert(#s.errors==0)
 end)
 assert(loadfile("tests/mock_clickables.lua"))()(ns,test)
 print("PASS "..passed.." tests")
