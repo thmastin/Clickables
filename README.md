@@ -1,6 +1,6 @@
 # Clickables
 
-Clickables provides one secure button for the next quest starter or openable item in your bags. It never uses an item automatically; click the button or use the **Use next Clickable** key binding.
+Clickables provides one secure button for the next quest starter, openable, elixir, or scroll in your bags. It never uses an item automatically; click the button or use the **Use next Clickable** key binding.
 
 ## Install
 
@@ -8,7 +8,9 @@ Copy the `Clickables` folder into your Forever client's `Interface\AddOns` direc
 
 ## Options
 
-Find **Clickables** under Game Menu > Options > AddOns. Lock or drag the button, set scale, choose hide or dim when empty, and toggle each supported item type. Alt+right-click the Clickables button to toggle its current item on the ignore list. Bag item clicks are left to your bag addons to avoid modifier conflicts. The ignore list shows item icons and names when item data is available. Slash fallback: `/clickables lock`, `/clickables unlock`, `/clickables scale <number>`, `/clickables list`, `/clickables clear` (run twice within five seconds).
+Find **Clickables** under Game Menu > Options > AddOns. Lock or drag the button, set scale, choose hide or dim when empty, and toggle each supported item type. Elixirs and scrolls are on by default. Scrolls are filtered by class and best carried rank; current buffs and elixir categories are checked before queuing. Hybrids use the talent tree with the most points when available. Enable the class override to allow normally filtered stats. Alt+right-click toggles the current item on the ignore list. Bag item clicks are left to your bag addons to avoid modifier conflicts. The ignore list shows item icons and names when available.
+
+Slash commands include `/clickables errors` to show the last ten errors, `/clickables errors clear` to clear them, and `/clickables debug` to toggle immediate stack output, plus `/clickables lock`, `/clickables unlock`, `/clickables scale <number>`, `/clickables list`, and `/clickables clear` (run twice within five seconds).
 
 The addon targets WoW Forever (`_forever_`, Interface 16001). Locked items are skipped unless a Rogue's Lockpicking skill can be confirmed sufficient; when the requirement cannot be determined, the item is skipped.
 
@@ -28,7 +30,6 @@ Releases are tagged only after in-game checks. GitHub Actions builds releases wi
 
 ## Planned
 
-- **v1.1:** scrolls and elixirs with buff-rank checks.
 - **v1.2:** food, with a Well Fed check through Shift-click.
 - Later: low-health bandage and healthstone suggestions (off by default).
 
