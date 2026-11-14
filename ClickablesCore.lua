@@ -167,7 +167,9 @@ function ns.BestFood(items)
     for _,item in ipairs(items or {}) do
         local score=item.score or item.bonus or 0
         local bestScore=best and (best.score or best.bonus or 0) or nil
-        if not best or score>bestScore or (score==bestScore and (item.count or 1)>(best.count or 1)) then best=item end
+        if not best or score>bestScore
+            or (score==bestScore and (item.count or 1)<(best.count or 1))
+            or (score==bestScore and (item.count or 1)==(best.count or 1) and (item.slotCount or item.count or 1)<(best.slotCount or best.count or 1)) then best=item end
     end
     return best
 end
@@ -245,7 +247,7 @@ function ns.UpdateView(current,queueLength,db,frame,icon,count,remain,inCombat,q
         else questBadge:Hide() end
     end
     if not current then frame:SetAttribute("item",nil);frame:SetAttribute("item1",nil);icon:SetTexture(nil);count:SetText("");remain:SetText("");if db.hideWhenEmpty then frame:Hide() else frame:SetAlpha(0.35);frame:Show() end;return end
-    frame:SetAlpha(1);frame:Show();icon:SetTexture(ns.GetItemIcon(current.itemID));count:SetText(current.count>1 and current.count or "");remain:SetText(queueLength>1 and ((queueLength-1).." more") or "")
+    frame:SetAlpha(1);frame:Show();icon:SetTexture(ns.GetItemIcon(current.itemID));count:SetText(current.count>1 and current.count or "");remain:SetText(queueLength>1 and ("+"..(queueLength-1).." queued") or "")
     local item="item:"..current.itemID;frame:SetAttribute("item",item);frame:SetAttribute("item1",item)
 end
 function ns.Classify(item,settings)

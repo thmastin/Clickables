@@ -64,13 +64,13 @@ test("updateView works when GetItemIcon is unavailable",function()
  ns.UpdateView({itemID=42,bag=0,slot=3,count=2},2,{hideWhenEmpty=false},frame,icon,count,remain,false)
  assert(view.texture=="icon-42" and view.attributes.type=="item" and view.attributes.type1=="item")
  assert(view.attributes.item=="item:42" and view.attributes.item1=="item:42")
- assert(view.count==2 and view.remain=="1 more" and view.shown)
+ assert(view.count==2 and view.remain=="+1 queued" and view.shown)
  ns.UpdateView(nil,0,{hideWhenEmpty=false},frame,icon,count,remain,false)
  assert(view.attributes.item==nil and view.attributes.item1==nil)
  GetItemIcon,GetItemInfo,C_Item=oldIcon,oldInfo,oldCItem
 end)
 test("quest badge shows only for quest starters",function()
- local badge={texture=nil,shown=false,SetTexture=function(self,v)self.texture=v end,Show=function(self)self.shown=true end,Hide=function(self)self.shown=false end}
+ local badge={texture=nil,shown=false,SetTexture=function(self,v)self.texture=v end,SetAllPoints=function(self,icon)self.anchoredTo=icon end,Show=function(self)self.shown=true end,Hide=function(self)self.shown=false end}
  local frame={SetAlpha=function()end,Show=function()end,Hide=function()end,SetAttribute=function()end}
  local icon={SetTexture=function()end};local count={SetText=function()end};local remain={SetText=function()end}
  local function show(kind,active)
@@ -147,7 +147,7 @@ test("Enhancement Shaman weights ribs and smallfish equally",function()
  ribs.score=ns.ItemStatScore(ribs.stats,"SHAMAN","melee");ribs.count=1
  fish.score=ns.ItemStatScore(fish.stats,"SHAMAN","melee");fish.count=6
  assert(ribs.score==2 and fish.score==2)
- assert(ns.BestFood({ribs,fish})==fish)
+ assert(ns.BestFood({ribs,fish})==ribs)
 end)
 test("Rogue Agility beats Attack Power",function()
  assert(ns.StatScore("agility",1,"ROGUE",nil)>ns.StatScore("attack_power",1,"ROGUE",nil))
@@ -155,9 +155,11 @@ end)
 test("Caster Intellect beats Stamina baseline",function()
  assert(ns.StatScore("intellect",1,"MAGE",nil)>ns.StatScore("stamina",1,"MAGE",nil))
 end)
-test("stat score tie uses total item count",function()
- local a={itemID=1,score=2,count=2};local b={itemID=2,score=2,count=9}
- assert(ns.BestFood({a,b})==b)
+test("stat score tie favors smaller total count then smaller slot stack",function()
+ local smallerTotal={itemID=1,score=2,count=2,slotCount=2};local largerTotal={itemID=2,score=2,count=9,slotCount=1}
+ assert(ns.BestFood({largerTotal,smallerTotal})==smallerTotal)
+ local smallerSlot={itemID=3,score=2,count=5,slotCount=2};local largerSlot={itemID=4,score=2,count=5,slotCount=4}
+ assert(ns.BestFood({largerSlot,smallerSlot})==smallerSlot)
 end)
 test("battle and guardian elixir conflicts",function()
  assert(ns.ElixirConflict({{category="battle"}},"battle"))
@@ -189,9 +191,9 @@ test("class filtering on stat food",function()
  local mixed=ns.FoodTooltip("Use: Eat to become Well Fed and gain 3 Intellect and 2 Agility for 15 min.")
  assert(ns.FoodEligible(mixed,"WARRIOR",nil,false))
 end)
-test("best food uses highest stat then larger stack",function()
+test("best food uses highest stat then smaller total stack",function()
  local best=ns.BestFood({{itemID=1,bonus=2,count=20},{itemID=2,bonus=4,count=1},{itemID=3,bonus=4,count=3}})
- assert(best.itemID==3)
+ assert(best.itemID==2)
 end)
 test("food tooltip fallback",function()
  assert(ns.FoodTooltip("Use: Eat to become Well Fed for 15 seconds."))
