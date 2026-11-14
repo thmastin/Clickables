@@ -2,6 +2,14 @@
 
 All notable changes to Clickables are documented here.
 
+## [1.2.0] - 2026-11-13
+
+### Added
+- Buff food queue with Well Fed and eating aura checks, class/spec filtering, and best bonus/stack selection.
+- Food category option and queue priority after quest starters, openables, elixirs, and scrolls.
+- Stat-weighted ranking for food, scrolls, and elixirs, plus total same-item counts across bags.
+- GitHub Actions CI for the local test suite and Lua syntax checks.
+
 ## [1.1.0] - 2026-11-13
 
 ### Added

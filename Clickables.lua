@@ -1,6 +1,7 @@
 local addonName, ns = ...
 local ADDON, DB, queue = "Clickables", nil, {}
 local errorState=ns.NewErrorState()
+local questLogState=ns.NewQuestLogState()
 local function safe(label,fn) return function(...)
     local args={...}
     return ns.SafeCall(errorState,label,function() return fn(unpack(args)) end,GetTime and GetTime() or 0,print)
@@ -12,30 +13,39 @@ frame:SetSize(48,48); frame:RegisterForClicks("AnyUp", "AnyDown"); frame:SetAttr
 frame:SetMovable(true); frame:EnableMouse(true); frame:RegisterForDrag("LeftButton")
 frame:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"}); frame:SetBackdropColor(0.04,0.04,0.04,0.75)
 local icon=frame:CreateTexture(nil,"ARTWORK"); icon:SetAllPoints(); frame.icon=icon
+local questBadge=frame:CreateTexture(nil,"OVERLAY"); questBadge:SetAllPoints(icon); questBadge:Hide(); frame.questBadge=questBadge
 local count=frame:CreateFontString(nil,"OVERLAY","NumberFontNormal"); count:SetPoint("BOTTOMRIGHT",-1,1); frame.count=count
 local remain=frame:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); remain:SetPoint("TOP",frame,"BOTTOM",0,-2); frame.remain=remain
 local function bagName(bag,slot) return bag.." "..slot end
 local function getText(itemID)
     local scan=CreateFrame("GameTooltip", "ClickablesScanTooltip", nil, "GameTooltipTemplate")
     scan:SetOwner(UIParent,"ANCHOR_NONE"); scan:SetItemByID(itemID)
-    local open,quest,locked,use=false,false,false
+    local open,quest,locked=false,false,false
+    local useParts,inUse={},false
     local openText=ITEM_OPENABLE or "Right Click to Open"; local questText=ITEM_STARTS_QUEST or "This Item Begins a Quest"
     for i=1,scan:NumLines() do
         local line=_G["ClickablesScanTooltipTextLeft"..i]
         local s=line and line:GetText()
         if s then
+            local useStart=s:find("Use:",1,true)
+            if useStart then
+                inUse=true
+                useParts[#useParts+1]=s:sub(useStart+4)
+            elseif inUse then
+                useParts[#useParts+1]=s
+            end
             if s:find(openText,1,true) or s:find("Right Click to Open",1,true) then open=true end
             if s:find(questText,1,true) or s:find("This Item Begins a Quest",1,true) then quest=true end
             if s:find(ITEM_LOCKED or "Locked",1,true) then locked=true end
-            if s:find("Use:",1,true) then use=s end
         end
     end
-    scan:Hide(); return open,quest,locked,use
+    scan:Hide(); return open,quest,locked,#useParts>0 and ns.JoinTooltipLines(useParts) or nil
 end
 local function playerSpec()
     if not GetTalentTabInfo then return nil end
-    local best,bestPoints
-    for tab=1,3 do local _,_,points=GetTalentTabInfo(tab); if points and (not bestPoints or points>bestPoints) then best,bestPoints=tab,points end end
+    local points={}
+    for tab=1,3 do local _,_,spent=GetTalentTabInfo(tab);points[tab]=spent end
+    local best=ns.DominantTalentTab(points)
     if not best then return nil end
     local _,class=UnitClass("player")
     local rule=ns.ClassScrollRules[class]
@@ -47,6 +57,7 @@ local function auras()
     local function add(name,spellID)
         if not name then return end
         local lower=name:lower()
+        out[#out+1]={name=name,spellID=spellID}
         for _,stat in ipairs({"strength","agility","intellect","spirit","stamina"}) do
             if lower:find(stat,1,true) then
                 local rank=lower:match(" iv$") and 4 or (lower:match(" iii$") and 3 or (lower:match(" ii$") and 2 or 1))
@@ -59,7 +70,7 @@ local function auras()
         for _,d in pairs(ns.ElixirItemIDs) do if name:lower():find((d.aura or ""):lower(),1,true) then out[#out+1]={category=d.category,stat=d.stat,rank=d.rank,spellID=spellID};break end end
     end
     if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-        for i=1,40 do local a=C_UnitAuras.GetAuraDataByIndex("player",i,"HELPFUL");if not a then break end;add(a.name,a.spellId) end
+        for i=1,40 do local a=C_UnitAuras.GetAuraDataByIndex("player",i,"HELPFUL");if not a then break end;local n=#out+1;add(a.name,a.spellId);if a.icon==133950 and #out>=n then out[#out].icon=133950 end end
     else
         local f=UnitBuff or UnitAura
         if f then for i=1,40 do local name,_,_,_,_,_,_,_,_,spellID=f("player",i);if not name then break end;add(name,spellID) end end
@@ -72,16 +83,42 @@ local function inferredUse(use)
     local stats={"strength","agility","intellect","spirit","stamina"}
     for _,stat in ipairs(stats) do if s:find(stat,1,true) then return stat end end
     if s:find("armor",1,true) or s:find("defense",1,true) then return "armor" end
-    if s:find("attack power",1,true) then return "strength" end
+    if s:find("attack power",1,true) then return "attack_power" end
+end
+local function scoreText(name,stats,class,spec)
+    local labels={strength="Str",agility="Agi",attack_power="AP",intellect="Int",spirit="Spirit",stamina="Sta"}
+    local parts={}
+    for _,entry in ipairs(stats or {}) do parts[#parts+1]=string.format("%g %s",entry.bonus or 0,labels[entry.stat] or entry.stat) end
+    if #parts==0 then parts[1]="unknown" end
+    return name.." "..table.concat(parts," + ").." = "..string.format("%g",ns.ItemStatScore(stats,class,spec))
 end
 local function itemData(bag,slot)
     local info=ns.GetContainerItemInfo(bag,slot)
     if not info or not info.itemID then return end
+    local questInfo=ns.GetContainerItemQuestInfo(bag,slot)
     local open,quest,locked,use=getText(info.itemID)
+    local foodCandidate=ns.FoodCandidate(info.itemID,use)
+    local food=ns.FoodData(info.itemID,use)
+    if DB.ignored and DB.ignored[info.itemID] then
+        if errorState.debug and foodCandidate then
+            local class=select(2,UnitClass("player"));local spec=playerSpec()
+            local name=ns.GetItemName(info.itemID) or tostring(info.itemID)
+            print("Clickables food "..scoreText(name,food and food.stats,class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): ignored")
+        end
+        return nil
+    end
     local itemInfo=ns.GetItemInfo(info.itemID)
     local loot=info.hasLoot or info.isLootable or (itemInfo and (itemInfo.hasLoot or itemInfo.isLootable))
-    local kind=ns.Classify({itemID=info.itemID,lootable=loot,tooltipOpenable=open,allowlisted=ns.OpenableItemIDs[info.itemID],quest=quest,locked=locked},DB)
-    local data={bag=bag,slot=slot,itemID=info.itemID,count=info.stackCount or 1,link=ns.GetContainerItemLink(bag,slot)}
+    local questID=questInfo and questInfo.questID
+    local questStatus={ready=questLogState.ready}
+    if questID then
+        questStatus.onQuest=C_QuestLog and C_QuestLog.IsOnQuest and C_QuestLog.IsOnQuest(questID) or false
+        questStatus.completed=(C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted and C_QuestLog.IsQuestFlaggedCompleted(questID))
+            or (IsQuestFlaggedCompleted and IsQuestFlaggedCompleted(questID)) or false
+    end
+    local startsQuest=ns.QuestDecision(questInfo,quest,questStatus)
+    local kind=ns.Classify({itemID=info.itemID,lootable=loot,tooltipOpenable=open,allowlisted=ns.OpenableItemIDs[info.itemID],quest=startsQuest,locked=locked},DB)
+    local data={bag=bag,slot=slot,itemID=info.itemID,count=info.stackCount or 1,slotCount=info.stackCount or 1,link=ns.GetContainerItemLink(bag,slot),questActive=questInfo and questInfo.isActive}
     local sd=ns.ScrollItemIDs[info.itemID]; local ed=ns.ElixirItemIDs[info.itemID]
     -- The checked-in IDs come from the installed Forever LibForeverData list;
     -- verify cached client names before applying a mapping.
@@ -93,34 +130,103 @@ local function itemData(bag,slot)
         local expected=sd.name:gsub(" I$","")
         if knownName~=expected then sd=nil end
     end
-    if sd and DB.scrolls then
+    local foodActive,foodAllowed=false,true
+    if foodCandidate then
+        local class=select(2,UnitClass("player"));local spec=playerSpec()
+        foodActive=ns.FoodAuraActive(auras())
+        if food then foodAllowed=ns.FoodEligible(food,class,spec,DB.classFilterOverride);food.score=ns.ItemStatScore(food.stats,class,spec) end
+        local name=ns.GetItemName(info.itemID) or tostring(info.itemID)
+        if errorState.debug then
+            local skipReason
+            if not food then skipReason="no Well Fed text"
+            elseif foodActive then skipReason="Well Fed/eating aura active"
+            elseif not foodAllowed then skipReason="class filter"
+            elseif not DB.food then skipReason="Food disabled"
+            else skipReason="eligible" end
+            print("Clickables food "..scoreText(name,food and food.stats,class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..skipReason)
+        end
+    end
+    if food and DB.food and not foodActive and foodAllowed then
+        data.kind="food";data.bonus=food.bonus;data.score=food.score;data.reason="No Well Fed buff"
+    elseif sd then
+        local class=select(2,UnitClass("player"));local spec=playerSpec()
         local best=sd.rank
         for _,d in pairs(ns.ScrollItemIDs) do if d.stat==sd.stat and d.rank>best then for b=0,NUM_BAG_SLOTS do for sl=1,ns.GetContainerNumSlots(b) do local bi=ns.GetContainerItemInfo(b,sl);if bi and bi.itemID then local candidate=ns.ScrollItemIDs[bi.itemID];if candidate and candidate.stat==sd.stat and candidate.rank>d.rank then best=candidate.rank end end end end end end
         local active=ns.ActiveRank(auras(),sd.stat)
-        if best==sd.rank and active<sd.rank and ns.ClassAllows(select(2,UnitClass("player")),playerSpec(),sd.stat,DB.classFilterOverride) then data.kind="scroll";data.reason=sd.name..", "..(active>0 and "weaker "..sd.stat.." buff active" or "no "..(sd.stat=="armor" and "Armor" or sd.stat:sub(1,1):upper()..sd.stat:sub(2)).." buff active") end
-    elseif ed and DB.elixirs then
-        if ns.ClassAllows(select(2,UnitClass("player")),playerSpec(),ed.stat,DB.classFilterOverride) and not ns.ElixirConflict(auras(),ed.category) then data.kind="elixir";data.reason=ed.name..", no "..ed.category.." elixir active" end
+        local score=ns.StatScore(sd.stat,sd.rank,class,spec)
+        local allowed=ns.ClassAllows(class,spec,sd.stat,DB.classFilterOverride)
+        local reason
+        if not DB.scrolls then reason="Scrolls disabled"
+        elseif best>sd.rank then reason="better rank carried"
+        elseif active>=sd.rank then reason="buff active"
+        elseif not allowed then reason="class filter"
+        else data.kind="scroll";data.stat=sd.stat;data.score=score;data.reason=sd.name..", "..(active>0 and "weaker "..sd.stat.." buff active" or "no "..(sd.stat=="armor" and "Armor" or sd.stat:sub(1,1):upper()..sd.stat:sub(2)).." buff active");reason="eligible" end
+        if errorState.debug then print("Clickables scroll "..scoreText(knownName or sd.name,{{stat=sd.stat,bonus=sd.rank}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
+    elseif ed then
+        local class=select(2,UnitClass("player"));local spec=playerSpec()
+        local score=ns.StatScore(ed.stat,ed.rank,class,spec)
+        local allowed=ns.ClassAllows(class,spec,ed.stat,DB.classFilterOverride)
+        local conflict=ns.ElixirConflict(auras(),ed.category)
+        local reason
+        if not DB.elixirs then reason="Elixirs disabled"
+        elseif not allowed then reason="class filter"
+        elseif conflict then reason=ed.category.." elixir active"
+        else data.kind="elixir";data.stat=ed.stat;data.score=score;data.reason=ed.name..", no "..ed.category.." elixir active";reason="eligible" end
+        if errorState.debug then print("Clickables elixir "..scoreText(knownName or ed.name,{{stat=ed.stat,bonus=ed.rank}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
     elseif not sd and not ed and use then
         local stat=inferredUse(use)
         local label=(knownName or ns.GetItemName(info.itemID) or ""):lower()
-        if stat and label:find("scroll",1,true) and DB.scrolls then
-            -- Unknown-rank scrolls are only safe when no buff of that stat is active.
-            if ns.ActiveRank(auras(),stat)==0 and ns.ClassAllows(select(2,UnitClass("player")),playerSpec(),stat,DB.classFilterOverride) then data.kind="scroll";data.reason=(knownName or "Scroll")..", no matching buff active" end
-        elseif stat and label:find("elixir",1,true) and DB.elixirs then
+        local class=select(2,UnitClass("player"));local spec=playerSpec()
+        if stat and label:find("scroll",1,true) then
+            local active=ns.ActiveRank(auras(),stat)>0
+            local allowed=ns.ClassAllows(class,spec,stat,DB.classFilterOverride)
+            local reason
+            if not DB.scrolls then reason="Scrolls disabled"
+            elseif active then reason="buff active"
+            elseif not allowed then reason="class filter"
+            else data.kind="scroll";data.stat=stat;data.score=ns.StatScore(stat,1,class,spec);data.reason=(knownName or "Scroll")..", no matching buff active";reason="eligible" end
+            if errorState.debug then print("Clickables scroll "..scoreText(knownName or "Scroll",{{stat=stat,bonus=1}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
+        elseif stat and label:find("elixir",1,true) then
             local category=use:lower():find("guardian",1,true) and "guardian" or (use:lower():find("battle",1,true) and "battle")
-            if category and not ns.ElixirConflict(auras(),category) and ns.ClassAllows(select(2,UnitClass("player")),playerSpec(),stat,DB.classFilterOverride) then data.kind="elixir";data.reason=(knownName or "Elixir")..", no "..category.." elixir active" end
+            local allowed=ns.ClassAllows(class,spec,stat,DB.classFilterOverride)
+            local conflict=category and ns.ElixirConflict(auras(),category)
+            local reason
+            if not DB.elixirs then reason="Elixirs disabled"
+            elseif not allowed then reason="class filter"
+            elseif conflict then reason=category.." elixir active"
+            elseif category then data.kind="elixir";data.stat=stat;data.score=ns.StatScore(stat,1,class,spec);data.reason=(knownName or "Elixir")..", no "..category.." elixir active";reason="eligible"
+            else reason="unknown elixir category" end
+            if errorState.debug then print("Clickables elixir "..scoreText(knownName or "Elixir",{{stat=stat,bonus=1}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
         end
     end
-    if kind then data.kind=kind end
+    if kind then data.kind=kind;if kind=="quest" then data.reason="Starts a quest you don't have" end end
     if data.kind then return data end
 end
 local function updateView()
-    ns.UpdateView(queue[1], #queue, DB, frame, icon, count, remain, InCombatLockdown())
+    ns.UpdateItemCount(queue[1],count)
+    ns.UpdateView(queue[1], #queue, DB, frame, icon, count, remain, InCombatLockdown(), questBadge)
 end
 local function rebuild()
     if InCombatLockdown() then return end
     local fresh={}
     for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local d=itemData(bag,slot); if d then fresh[#fresh+1]=d end end end
+    local totals={}
+    for _,item in ipairs(fresh) do
+        if totals[item.itemID]==nil then totals[item.itemID]=ns.CountItemInBags(item.itemID) end
+        item.count=totals[item.itemID]
+    end
+    local foods={};for i=#fresh,1,-1 do if fresh[i].kind=="food" then foods[#foods+1]=table.remove(fresh,i) end end
+    local best=ns.BestFood(foods)
+    if errorState.debug then
+        for _,food in ipairs(foods) do
+            local status=food==best and "selected" or "not best eligible food"
+            print("Clickables food "..(ns.GetItemName(food.itemID) or tostring(food.itemID)).." ("..food.itemID.." at "..bagName(food.bag,food.slot).."): "..status)
+        end
+        local tied=false
+        if best then for _,food in ipairs(foods) do if food~=best and food.score==best.score then tied=true;break end end end
+        if tied then print("Clickables food tie -> smaller stack (total "..best.count..")") end
+    end
+    if best then fresh[#fresh+1]=best end
     ns.SortQueue(fresh);queue=fresh;updateView()
 end
 local function position()
@@ -169,7 +275,7 @@ local function options()
     local function check(label,key)
         local c=CreateFrame("CheckButton",nil,panel,"InterfaceOptionsCheckButtonTemplate");c:SetPoint("TOPLEFT",16,y);c.Text:SetText(label);c:SetChecked(DB[key]);c:SetScript("OnClick",safe("option toggle",function(self) DB[key]=self:GetChecked();rebuild() end));y=y-30
     end
-    check("Lock position","locked"); check("Hide when empty (otherwise dim)","hideWhenEmpty"); check("Openables","openables"); check("Quest starter items","questStarters");check("Elixirs","elixirs");check("Scrolls","scrolls");check("Use scrolls/elixirs my class normally wouldn't","classFilterOverride")
+    check("Lock position","locked"); check("Hide when empty (otherwise dim)","hideWhenEmpty"); check("Openables","openables"); check("Quest starter items","questStarters");check("Elixirs","elixirs");check("Scrolls","scrolls");check("Food","food");check("Use scrolls/elixirs/food my class normally wouldn't","classFilterOverride")
     local errorsHint=panel:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall");errorsHint:SetPoint("TOPLEFT",16,y);errorsHint:SetText("Show recent errors: /clickables errors    Clear: /clickables errors clear");y=y-24
     local scale=CreateFrame("Slider",nil,panel,"OptionsSliderTemplate");scale:SetPoint("TOPLEFT",20,y);scale:SetMinMaxValues(0.5,2);scale:SetValueStep(0.1);scale:SetValue(DB.scale);scale:SetWidth(180);scale.Text:SetText("Scale");scale:SetScript("OnValueChanged",safe("scale option",function(_,v) DB.scale=v;frame:SetScale(v) end))
     local listTitle=panel:CreateFontString(nil,"ARTWORK","GameFontNormal")
@@ -251,13 +357,17 @@ end
 local slash=safe("slash command",slashImpl)
 SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
 local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED");events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-events:RegisterEvent("UNIT_AURA")
+events:RegisterEvent("UNIT_AURA");events:RegisterEvent("QUEST_LOG_UPDATE");events:RegisterEvent("QUEST_REMOVED")
 events:SetScript("OnEvent",safe("event handler",function(_,event,name)
     if event=="GET_ITEM_INFO_RECEIVED" then if refreshIgnoredList then refreshIgnoredList() end
     elseif event=="ADDON_LOADED" and name==addonName then DB=ns.MergeDefaults(ClickablesDB);ClickablesDB=DB;position();options();rebuild()
     elseif event=="PLAYER_REGEN_ENABLED" then rebuild()
     elseif event=="UNIT_AURA" and name=="player" and not InCombatLockdown() then rebuild()
-    elseif event=="BAG_UPDATE_DELAYED" or event=="PLAYER_ENTERING_WORLD" or event=="QUEST_ACCEPTED" then rebuild() end
+    elseif event=="QUEST_LOG_UPDATE" or event=="QUEST_ACCEPTED" or event=="QUEST_REMOVED" then ns.MarkQuestLogReady(questLogState);rebuild()
+    elseif event=="BAG_UPDATE_DELAYED" then
+        ns.UpdateItemCount(queue[1],count)
+        if not InCombatLockdown() then rebuild() end
+    elseif event=="PLAYER_ENTERING_WORLD" then rebuild() end
 end))
 
 
