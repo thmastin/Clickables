@@ -1,8 +1,8 @@
 local _, ns = ...
 ns = ns or {}
 
-ns.Defaults = { point="CENTER", x=0, y=-120, scale=1, locked=false, hideWhenEmpty=false,
-    openables=true, questStarters=true, scrolls=true, elixirs=true, food=true, classFilterOverride=false, ignored={} }
+ns.Defaults = { settingsVersion=2, point="CENTER", x=0, y=-120, scale=1, locked=false, hideWhenEmpty=false,
+    openables=true, questStarters=true, scrolls=true, elixirs=true, food=true, classFilterOverride=false, ignored={}, priority={"quest","openable","elixir","scroll","food"} }
 ns.OpenableItemIDs = {
     [5523]=true, [5524]=true, [5525]=true, [5526]=true,
     [16882]=true, [16883]=true, [16884]=true, [16885]=true,
@@ -23,19 +23,18 @@ ns.ScrollItemIDs = {
 }
 -- Each record names its aura. Name matching is a fallback when spell IDs differ across client builds.
 ns.ElixirItemIDs = {
-    [2454]={category="battle", stat="agility", rank=1, name="Elixir of Lion's Strength", aura="Lion's Strength"},
-    [5997]={category="guardian", stat="armor", rank=1, name="Elixir of Minor Defense", aura="Defense"},
-    [3389]={category="guardian", stat="armor", rank=2, name="Elixir of Defense", aura="Defense"},
-    [3390]={category="battle", stat="agility", rank=2, name="Elixir of Lesser Agility", aura="Agility"},
-    [3383]={category="guardian", stat="stamina", rank=2, name="Elixir of Wisdom", aura="Wisdom"},
-    [3388]={category="guardian", stat="stamina", rank=2, name="Strong Troll's Blood Elixir", aura="Troll's Blood"},
-    [3825]={category="guardian", stat="stamina", rank=3, name="Elixir of Fortitude", aura="Fortitude"},
-    [8949]={category="battle", stat="agility", rank=3, name="Elixir of Agility", aura="Agility"},
-    [9179]={category="battle", stat="intellect", rank=4, name="Elixir of Greater Intellect", aura="Intellect"},
-    [9206]={category="battle", stat="strength", rank=4, name="Elixir of Giants", aura="Giants"},
-    [13452]={category="battle", stat="agility", rank=5, name="Elixir of the Mongoose", aura="Mongoose"},
-    [9187]={category="battle", stat="agility", rank=4, name="Elixir of Greater Agility", aura="Agility"},
-    [8951]={category="guardian", stat="stamina", rank=4, name="Elixir of Greater Defense", aura="Defense"},
+    [2454]={category="battle", stat="strength", rank=1, name="Elixir of Lion's Strength", aura="Elixir of Lion's Strength", auraSpellID=2367},
+    [5997]={category="guardian", stat="armor", rank=1, name="Elixir of Minor Defense", aura="Armor", auraSpellID=673},
+    [3389]={category="guardian", stat="armor", rank=2, name="Elixir of Defense", aura="Armor", auraSpellID=11348},
+    [3390]={category="battle", stat="agility", rank=2, name="Elixir of Lesser Agility", aura="Agility", auraSpellID=3160},
+    [3383]={category="guardian", stat="intellect", rank=2, name="Elixir of Wisdom", aura="Elixir of Wisdom", auraSpellID=11467},
+    [3825]={category="guardian", stat="stamina", rank=3, name="Elixir of Fortitude", aura="Fortitude", auraSpellID=3593},
+    [8949]={category="battle", stat="agility", rank=3, name="Elixir of Agility", aura="Agility", auraSpellID=11334},
+    [9179]={category="battle", stat="intellect", rank=4, name="Elixir of Greater Intellect", aura="Intellect", auraSpellID=11390},
+    [9206]={category="battle", stat="strength", rank=4, name="Elixir of Giants", aura="Giants", auraSpellID=11405},
+    [13452]={category="battle", stat="agility", rank=5, name="Elixir of the Mongoose", aura="Mongoose", auraSpellID=17538},
+    [9187]={category="battle", stat="agility", rank=4, name="Elixir of Greater Agility", aura="Agility", auraSpellID=11328},
+    [8951]={category="guardian", stat="armor", rank=4, name="Elixir of Greater Defense", aura="Elixir of Greater Defense", auraSpellID=11349},
 }
 -- Centralized tuning table for class/spec eligibility.
 ns.ClassScrollRules = {
@@ -71,8 +70,10 @@ function ns.SafeCall(state, label, fn, now, printer)
     local stack = type(result)=="table" and result.stack or ""
     now = now or 0
     local prev = state.last[msg]
+    if not prev and state.lastCount and state.lastCount>=100 then state.last={};state.lastCount=0 end
     if not prev or now-prev >= 30 then
         state.last[msg]=now
+        state.lastCount=(state.lastCount or 0)+1
         if printer then printer("Clickables: something went wrong ("..msg:sub(1,100).."). /clickables errors for details") end
     end
     state.errors[#state.errors+1]={msg=msg,stack=stack,time=now,label=label}
@@ -117,8 +118,30 @@ function ns.ActiveRank(auras, stat)
     for _,a in ipairs(auras or {}) do if a.stat==stat and (a.rank or 1)>rank then rank=a.rank or 1 end end
     return rank
 end
+function ns.BestCarriedRanks(items)
+    local best={}
+    for _,item in ipairs(items or {}) do if item.stat and item.rank and item.rank>(best[item.stat] or 0) then best[item.stat]=item.rank end end
+    return best
+end
+function ns.DedupeQueue(items,countByID)
+    local byID,out={},{}
+    for _,item in ipairs(items or {}) do
+        local old=byID[item.itemID]
+        if old then
+            old.count=countByID and countByID[item.itemID] or math.max(old.count or 1,item.count or 1)
+            if (item.score or 0)>(old.score or 0) then old.score=item.score end
+        else byID[item.itemID]=item;out[#out+1]=item end
+    end
+    return out
+end
 function ns.ElixirConflict(auras, category)
-    for _,a in ipairs(auras or {}) do if a.category==category then return true end end
+    return false
+end
+function ns.ElixirAuraActive(auras, elixir)
+    for _,a in ipairs(auras or {}) do
+        if elixir.auraSpellID and a.spellID==elixir.auraSpellID then return true end
+        if not elixir.auraSpellID and a.name==elixir.aura then return true end
+    end
     return false
 end
 function ns.FoodAuraActive(auras)
@@ -175,7 +198,14 @@ function ns.BestFood(items)
 end
 function ns.MergeDefaults(db, defaults)
     db=type(db)=="table" and db or {}; defaults=defaults or ns.Defaults
-    for k,v in pairs(defaults) do if db[k]==nil then db[k]=type(v)=="table" and {} or v end end
+    local function copy(v) if type(v)~="table" then return v end local t={} for k,x in pairs(v) do t[k]=copy(x) end return t end
+    for k,v in pairs(defaults) do if db[k]==nil then db[k]=copy(v) end end
+    if type(db.ignored)~="table" then db.ignored={} end
+    if type(db.priority)~="table" then db.priority=copy(defaults.priority) end
+    local valid={quest=true,openable=true,elixir=true,scroll=true,food=true};local seen={},{}; local priority={}
+    for _,v in ipairs(db.priority) do if valid[v] and not seen[v] then seen[v]=true;priority[#priority+1]=v end end
+    for _,v in ipairs(defaults.priority) do if not seen[v] then priority[#priority+1]=v end end
+    db.priority=priority;db.settingsVersion=defaults.settingsVersion
     return db
 end
 function ns.ToggleIgnore(ignored,itemID)
@@ -239,16 +269,16 @@ function ns.UpdateItemCount(current,countText)
 end
 function ns.UpdateView(current,queueLength,db,frame,icon,count,remain,inCombat,questBadge)
     if inCombat then return end
-    frame:SetAttribute("type","item");frame:SetAttribute("type1","item")
+    frame:SetAttribute("type1","item")
     if questBadge then
         if current and current.kind=="quest" then
             questBadge:SetTexture(current.questActive and "Interface\\ContainerFrame\\UI-Icon-QuestBorder" or "Interface\\ContainerFrame\\UI-Icon-QuestBang")
             questBadge:Show()
         else questBadge:Hide() end
     end
-    if not current then frame:SetAttribute("item",nil);frame:SetAttribute("item1",nil);icon:SetTexture(nil);count:SetText("");remain:SetText("");if db.hideWhenEmpty then frame:Hide() else frame:SetAlpha(0.35);frame:Show() end;return end
+    if not current then frame:SetAttribute("item1",nil);icon:SetTexture(nil);count:SetText("");remain:SetText("");if db.hideWhenEmpty then frame:Hide() else frame:SetAlpha(0.35);frame:Show() end;return end
     frame:SetAlpha(1);frame:Show();icon:SetTexture(ns.GetItemIcon(current.itemID));count:SetText(current.count>1 and current.count or "");remain:SetText(queueLength>1 and ("+"..(queueLength-1).." queued") or "")
-    local item="item:"..current.itemID;frame:SetAttribute("item",item);frame:SetAttribute("item1",item)
+    local item="item:"..current.itemID;frame:SetAttribute("item1",item)
 end
 function ns.Classify(item,settings)
     settings=settings or ns.Defaults
@@ -271,14 +301,15 @@ function ns.QuestDecision(questInfo,tooltipQuest,state)
     if state.onQuest or state.completed or not state.ready then return false end
     return true
 end
-function ns.SortQueue(items)
-    local priority={quest=1,openable=2,elixir=3,scroll=4,food=5}
+function ns.SortQueue(items, order)
+    local priority={};for i,kind in ipairs(order or ns.Defaults.priority) do priority[kind]=i end
     table.sort(items,function(a,b)
         local pa,pb=priority[a.kind] or 99,priority[b.kind] or 99
         if pa~=pb then return pa<pb end
         local sa,sb=a.score or 0,b.score or 0
         if sa~=sb then return sa>sb end
-        if (a.count or 1)~=(b.count or 1) then return (a.count or 1)>(b.count or 1) end
+        if (a.count or 1)~=(b.count or 1) then return (a.count or 1)<(b.count or 1) end
+        if (a.slotCount or a.count or 1)~=(b.slotCount or b.count or 1) then return (a.slotCount or a.count or 1)<(b.slotCount or b.count or 1) end
         if a.bag~=b.bag then return a.bag<b.bag end
         return a.slot<b.slot
     end);return items
