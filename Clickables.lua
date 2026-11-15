@@ -101,12 +101,18 @@ local RECIPE_CLASS_ID=Enum and Enum.ItemClass and Enum.ItemClass.Recipe or 9
 local CONSUMABLE_CLASS_ID=Enum and Enum.ItemClass and Enum.ItemClass.Consumable or 0
 local function itemClassID(itemID)
     if GetItemInfoInstant then
-        local _,_,classID=GetItemInfoInstant(itemID)
-        if classID~=nil then return classID end
+        local classID=select(6,GetItemInfoInstant(itemID))
+        if type(classID)=="number" then return classID end
     end
     local info=ns.GetItemInfo(itemID)
-    if type(info)=="table" then return info.classID or info.itemClassID end
-    if GetItemInfo then local values={GetItemInfo(itemID)};return values[12] end
+    if type(info)=="table" then
+        local classID=info.classID or info.itemClassID
+        if type(classID)=="number" then return classID end
+    end
+    if GetItemInfo then
+        local classID=select(12,GetItemInfo(itemID))
+        if type(classID)=="number" then return classID end
+    end
 end
 local currentClass,currentSpec,activeAuras,carriedScrollRanks
 local function itemData(bag,slot)
@@ -116,7 +122,7 @@ local function itemData(bag,slot)
     if DB.ignored and DB.ignored[info.itemID] then return nil end
     local classID=itemClassID(info.itemID)
     local recipe=classID==RECIPE_CLASS_ID
-    local consumable=classID==CONSUMABLE_CLASS_ID
+    local consumable=classID==nil or classID==CONSUMABLE_CLASS_ID
     local open,quest,locked,use=getText(info.itemID,bag,slot)
     local foodCandidate=not recipe and consumable and ns.FoodCandidate(info.itemID,use)
     local food=not recipe and consumable and ns.FoodData(info.itemID,use)

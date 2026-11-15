@@ -20,7 +20,10 @@ return function(ns,test)
   env.C_EventUtils={IsEventValid=function()return true end}
   env.C_Item={GetItemNameByID=function(id)return client.names and client.names[id] end,GetItemInfo=function(id)return client.names and client.names[id] end,RequestLoadItemDataByID=function(id)client.requested=client.requested or {};client.requested[id]=true end}
   env.Enum={ItemClass={Consumable=0,Recipe=9}}
-  env.GetItemInfoInstant=function(id)return client.names[id],nil,client.classIDs[id] or 0 end
+  env.GetItemInfoInstant=function(id)
+   local classID=client.classIDs[id] or 0
+   return id,classID==0 and "Consumable" or "Item",classID==0 and "Food & Drink" or "Recipe",nil,nil,classID,0
+  end
   env.C_Container={
    GetContainerNumSlots=function(bag)return #(client.bags[bag] or {})end,
    GetContainerItemInfo=function(bag,slot)return client.bags[bag] and client.bags[bag][slot]end,
@@ -143,14 +146,17 @@ return function(ns,test)
   c:load()
   assert(c.button:GetAttribute("item1")=="item:3220","Blood Sausage should win while recipe is excluded")
   c.bags[0][3]={itemID=100001,stackCount=1};c.bags[0][4]={itemID=5758,stackCount=1}
-  c.classIDs[100001]=4;c.classIDs[5758]=1
+  c.bags[0][5]={itemID=6948,stackCount=1};c.bags[0][6]={itemID=2454,stackCount=1}
+  c.classIDs[100001]=4;c.classIDs[5758]=1;c.classIDs[6948]=0;c.classIDs[2454]=0
   c.tooltipBySlot[0][3]={"Equip: Increases Strength by 7."}
+  c.tooltipBySlot[0][5]={"Use: Returns you to your home."}
+  c.tooltipBySlot[0][6]={"Use: Increases Strength by 5."}
   c.names[3679]="Recipe: Blood Sausage"
   env.SlashCmdList.CLICKABLES("debug");c:fire("BAG_UPDATE_DELAYED");c:flush()
   local found,unexpectedSkipped= false,{}
   for _,line in ipairs(c.printed)do
    if line:find("Clickables Recipe: Blood Sausage (3679): skipped, recipe",1,true) then found=true end
-   if line:find("skipped",1,true) and (line:find("100001",1,true) or line:find("5758",1,true)) then unexpectedSkipped[#unexpectedSkipped+1]=line end
+   if line:find("skipped",1,true) and (line:find("100001",1,true) or line:find("5758",1,true) or line:find("6948",1,true) or line:find("2454",1,true)) then unexpectedSkipped[#unexpectedSkipped+1]=line end
   end
   assert(found,"debug should report recipe exclusion")
   assert(#unexpectedSkipped==0,"gear and openable lockbox should not produce skipped lines: "..table.concat(unexpectedSkipped," | "))
