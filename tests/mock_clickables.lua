@@ -2,7 +2,7 @@ return function(ns,test)
  local function mockClient(saved,bags,tooltipBySlot,config)
   config=config or {}
   local timers,frames={},{}
-  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior"}
+  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior",classIDs=config.classIDs or {}}
   client.names={}
   for itemID,data in pairs(ns.ScrollItemIDs)do client.names[itemID]=data.name:gsub(" I$","")end
   for itemID,data in pairs(ns.ElixirItemIDs)do client.names[itemID]=data.name end
@@ -19,6 +19,8 @@ return function(ns,test)
   env.C_Timer={After=function(_,fn)timers[#timers+1]=fn end}
   env.C_EventUtils={IsEventValid=function()return true end}
   env.C_Item={GetItemNameByID=function(id)return client.names and client.names[id] end,GetItemInfo=function(id)return client.names and client.names[id] end,RequestLoadItemDataByID=function(id)client.requested=client.requested or {};client.requested[id]=true end}
+  env.Enum={ItemClass={Consumable=0,Recipe=9}}
+  env.GetItemInfoInstant=function(id)return client.names[id],nil,client.classIDs[id] or 0 end
   env.C_Container={
    GetContainerNumSlots=function(bag)return #(client.bags[bag] or {})end,
    GetContainerItemInfo=function(bag,slot)return client.bags[bag] and client.bags[bag][slot]end,
@@ -132,6 +134,26 @@ return function(ns,test)
    {[0]={{itemID=2454,stackCount=1},{itemID=2888,stackCount=1}}},
    {[0]={[2]={"Use: Eat to become Well Fed and gain 1 Strength for 15 min."}}})
   c:load();assert(c.button:GetAttribute("item1")=="item:2888","saved priority should put food before elixir")
+ end)
+
+ test("recipe tooltip cannot become food and Blood Sausage remains eligible",function()
+  local c,env=mockClient(nil,{[0]={{itemID=3679,stackCount=1},{itemID=3220,stackCount=1}}},
+   {[0]={[1]={"Use: Eat to become Well Fed and gain 3 Strength for 15 min."},[2]={"Use: Eat to become Well Fed and gain 2 Strength for 15 min."}}},
+   {classIDs={[3679]=9,[3220]=0}})
+  c:load()
+  assert(c.button:GetAttribute("item1")=="item:3220","Blood Sausage should win while recipe is excluded")
+  c.names[3679]="Recipe: Blood Sausage"
+  env.SlashCmdList.CLICKABLES("debug");c:fire("BAG_UPDATE_DELAYED");c:flush()
+  local found=false;for _,line in ipairs(c.printed)do if line:find("Recipe: Blood Sausage (3679): skipped, recipe",1,true) then found=true end end
+  assert(found,"debug should report recipe exclusion")
+ end)
+
+ test("recipe tooltip cannot enter elixir or scroll candidates",function()
+  local c=mockClient(nil,{[0]={{itemID=2454,stackCount=1},{itemID=954,stackCount=1}}},
+   {[0]={[1]={"Use: Teaches Elixir of Lion's Strength. Use: Increases Strength by 5."},[2]={"Use: Teaches Scroll of Strength I. Increases Strength by 5."}}},
+   {classIDs={[2454]=9,[954]=9}})
+  c:load()
+  assert(c.button:GetAttribute("item1")==nil,"recipe must not enter elixir or scroll candidates")
  end)
 
  test("ignored food and scroll items are skipped by rebuild",function()

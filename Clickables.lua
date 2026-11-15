@@ -97,15 +97,29 @@ local function scoreText(name,stats,class,spec)
     if #parts==0 then parts[1]="unknown" end
     return name.." "..table.concat(parts," + ").." = "..string.format("%g",ns.ItemStatScore(stats,class,spec))
 end
+local RECIPE_CLASS_ID=Enum and Enum.ItemClass and Enum.ItemClass.Recipe or 9
+local CONSUMABLE_CLASS_ID=Enum and Enum.ItemClass and Enum.ItemClass.Consumable or 0
+local function itemClassID(itemID)
+    if GetItemInfoInstant then
+        local _,_,classID=GetItemInfoInstant(itemID)
+        if classID~=nil then return classID end
+    end
+    local info=ns.GetItemInfo(itemID)
+    if type(info)=="table" then return info.classID or info.itemClassID end
+    if GetItemInfo then local values={GetItemInfo(itemID)};return values[12] end
+end
 local currentClass,currentSpec,activeAuras,carriedScrollRanks
 local function itemData(bag,slot)
     local info=ns.GetContainerItemInfo(bag,slot)
     if not info or not info.itemID then return end
     local questInfo=ns.GetContainerItemQuestInfo(bag,slot)
     if DB.ignored and DB.ignored[info.itemID] then return nil end
+    local classID=itemClassID(info.itemID)
+    local recipe=classID==RECIPE_CLASS_ID
+    local consumable=classID==CONSUMABLE_CLASS_ID
     local open,quest,locked,use=getText(info.itemID,bag,slot)
-    local foodCandidate=ns.FoodCandidate(info.itemID,use)
-    local food=ns.FoodData(info.itemID,use)
+    local foodCandidate=not recipe and consumable and ns.FoodCandidate(info.itemID,use)
+    local food=not recipe and consumable and ns.FoodData(info.itemID,use)
     local itemInfo=ns.GetItemInfo(info.itemID)
     local loot=info.hasLoot or info.isLootable or (itemInfo and (itemInfo.hasLoot or itemInfo.isLootable))
     local questID=questInfo and questInfo.questID
@@ -118,7 +132,7 @@ local function itemData(bag,slot)
     local startsQuest=ns.QuestDecision(questInfo,quest,questStatus)
     local kind=ns.Classify({itemID=info.itemID,lootable=loot,tooltipOpenable=open,allowlisted=ns.OpenableItemIDs[info.itemID],quest=startsQuest,locked=locked},DB)
     local data={bag=bag,slot=slot,itemID=info.itemID,count=info.stackCount or 1,slotCount=info.stackCount or 1,link=ns.GetContainerItemLink(bag,slot),questActive=questInfo and questInfo.isActive}
-    local sd=ns.ScrollItemIDs[info.itemID]; local ed=ns.ElixirItemIDs[info.itemID]
+    local sd=not recipe and ns.ScrollItemIDs[info.itemID]; local ed=not recipe and ns.ElixirItemIDs[info.itemID]
     -- The checked-in IDs come from the installed Forever LibForeverData list;
     -- verify cached client names before applying a mapping.
     local knownName
@@ -171,7 +185,7 @@ local function itemData(bag,slot)
         elseif conflict then reason="this elixir buff active"
         else data.kind="elixir";data.stat=ed.stat;data.score=score;data.reason=ed.name..", buff not active";reason="eligible" end
         if errorState.debug then print("Clickables elixir "..scoreText(knownName or ed.name,{{stat=ed.stat,bonus=ed.rank}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
-    elseif not sd and not ed and use then
+    elseif not recipe and consumable and not sd and not ed and use then
         local stat=inferredUse(use)
         local label=(knownName or ns.GetItemName(info.itemID) or ""):lower()
         local class=currentClass;local spec=currentSpec
@@ -197,6 +211,10 @@ local function itemData(bag,slot)
             if errorState.debug then print("Clickables elixir "..scoreText(knownName or "Elixir",{{stat=stat,bonus=1}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
         end
     end
+    if errorState.debug and (recipe or not consumable) then
+        local name=knownName or ns.GetItemName(info.itemID) or tostring(info.itemID)
+        print(name.." ("..info.itemID.."): skipped, "..(recipe and "recipe" or "not a consumable"))
+    end
     if kind then data.kind=kind;if kind=="quest" then data.reason="Starts a quest you don't have" end end
     if data.kind then return data end
 end
@@ -211,7 +229,7 @@ local function rebuild()
         local bi=ns.GetContainerItemInfo(bag,slot)
         if bi and bi.itemID then
             bagTotals[bi.itemID]=(bagTotals[bi.itemID] or 0)+(bi.stackCount or 1)
-            local sd=ns.ScrollItemIDs[bi.itemID];if sd then scrolls[#scrolls+1]=sd end
+            local sd=itemClassID(bi.itemID)~=RECIPE_CLASS_ID and ns.ScrollItemIDs[bi.itemID];if sd then scrolls[#scrolls+1]=sd end
         end
     end end
     carriedScrollRanks=ns.BestCarriedRanks(scrolls)

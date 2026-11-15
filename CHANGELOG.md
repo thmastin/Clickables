@@ -2,6 +2,11 @@
 
 All notable changes to Clickables are documented here.
 
+## [1.2.2] - 2026-11-15
+
+### Fixed
+- Recipes that teach food no longer show up as food.
+
 ## [1.2.1] - 2026-11-14
 
 ### Fixed
