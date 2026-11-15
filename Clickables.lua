@@ -1,5 +1,7 @@
 local addonName, ns = ...
 local ADDON, DB, queue = "Clickables", nil, {}
+local getInstant=(C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+local getInfo=(C_Item and C_Item.GetItemInfo) or GetItemInfo
 local errorState=ns.NewErrorState()
 local questLogState=ns.NewQuestLogState()
 local function safe(label,fn) return function(...)
@@ -97,15 +99,27 @@ local function scoreText(name,stats,class,spec)
     if #parts==0 then parts[1]="unknown" end
     return name.." "..table.concat(parts," + ").." = "..string.format("%g",ns.ItemStatScore(stats,class,spec))
 end
+local RECIPE_CLASS_ID=Enum and Enum.ItemClass and Enum.ItemClass.Recipe or 9
+local CONSUMABLE_CLASS_ID=Enum and Enum.ItemClass and Enum.ItemClass.Consumable or 0
+local function itemClassID(itemID)
+    if getInstant then
+        local classID=select(6,getInstant(itemID))
+        if type(classID)=="number" then return classID end
+    end
+    if getInfo then
+        local classID=select(12,getInfo(itemID))
+        if type(classID)=="number" then return classID end
+    end
+end
 local currentClass,currentSpec,activeAuras,carriedScrollRanks
 local function itemData(bag,slot)
     local info=ns.GetContainerItemInfo(bag,slot)
     if not info or not info.itemID then return end
     local questInfo=ns.GetContainerItemQuestInfo(bag,slot)
     if DB.ignored and DB.ignored[info.itemID] then return nil end
+    local classID=itemClassID(info.itemID)
     local open,quest,locked,use=getText(info.itemID,bag,slot)
-    local foodCandidate=ns.FoodCandidate(info.itemID,use)
-    local food=ns.FoodData(info.itemID,use)
+    local consumable=classID==nil or classID==CONSUMABLE_CLASS_ID
     local itemInfo=ns.GetItemInfo(info.itemID)
     local loot=info.hasLoot or info.isLootable or (itemInfo and (itemInfo.hasLoot or itemInfo.isLootable))
     local questID=questInfo and questInfo.questID
@@ -118,11 +132,17 @@ local function itemData(bag,slot)
     local startsQuest=ns.QuestDecision(questInfo,quest,questStatus)
     local kind=ns.Classify({itemID=info.itemID,lootable=loot,tooltipOpenable=open,allowlisted=ns.OpenableItemIDs[info.itemID],quest=startsQuest,locked=locked},DB)
     local data={bag=bag,slot=slot,itemID=info.itemID,count=info.stackCount or 1,slotCount=info.stackCount or 1,link=ns.GetContainerItemLink(bag,slot),questActive=questInfo and questInfo.isActive}
-    local sd=ns.ScrollItemIDs[info.itemID]; local ed=ns.ElixirItemIDs[info.itemID]
     -- The checked-in IDs come from the installed Forever LibForeverData list;
     -- verify cached client names before applying a mapping.
     local knownName
     if C_Item and C_Item.GetItemInfo then knownName=C_Item.GetItemInfo(info.itemID) else knownName=ns.GetItemName(info.itemID) end
+    local normalizedName=(knownName or ns.GetItemName(info.itemID) or ""):lower()
+    local recipeName=normalizedName:match("^recipe:") or normalizedName:match("^pattern:") or normalizedName:match("^plans:") or normalizedName:match("^formula:") or normalizedName:match("^schematic:") or normalizedName:match("^manual:")
+    local teachesRecipe=use and use:lower():match("^%s*teaches")
+    local recipe=classID==RECIPE_CLASS_ID or (classID==nil and (recipeName or teachesRecipe))
+    local foodCandidate=not recipe and consumable and ns.FoodCandidate(info.itemID,use)
+    local food=not recipe and consumable and ns.FoodData(info.itemID,use)
+    local sd=not recipe and ns.ScrollItemIDs[info.itemID]; local ed=not recipe and ns.ElixirItemIDs[info.itemID]
     if sd and (not knownName or knownName~=(sd.name:gsub(" I$",""))) then sd=nil end
     if ed and (not knownName or knownName~=ed.name) then ed=nil end
     if sd and knownName then
@@ -171,7 +191,7 @@ local function itemData(bag,slot)
         elseif conflict then reason="this elixir buff active"
         else data.kind="elixir";data.stat=ed.stat;data.score=score;data.reason=ed.name..", buff not active";reason="eligible" end
         if errorState.debug then print("Clickables elixir "..scoreText(knownName or ed.name,{{stat=ed.stat,bonus=ed.rank}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
-    elseif not sd and not ed and use then
+    elseif not recipe and consumable and not sd and not ed and use then
         local stat=inferredUse(use)
         local label=(knownName or ns.GetItemName(info.itemID) or ""):lower()
         local class=currentClass;local spec=currentSpec
@@ -197,6 +217,12 @@ local function itemData(bag,slot)
             if errorState.debug then print("Clickables elixir "..scoreText(knownName or "Elixir",{{stat=stat,bonus=1}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
         end
     end
+    local hasRelevantUse=use~=nil or (use and use:lower():find("well fed",1,true)~=nil)
+    local hasStatItemMapping=ns.ScrollItemIDs[info.itemID]~=nil or ns.ElixirItemIDs[info.itemID]~=nil
+    if errorState.debug and (recipe or not consumable) and (hasRelevantUse or hasStatItemMapping) and kind~="openable" and kind~="quest" then
+        local name=knownName or ns.GetItemName(info.itemID) or tostring(info.itemID)
+        print("Clickables "..name.." ("..info.itemID.."): skipped, "..(recipe and "recipe" or "not a consumable"))
+    end
     if kind then data.kind=kind;if kind=="quest" then data.reason="Starts a quest you don't have" end end
     if data.kind then return data end
 end
@@ -211,7 +237,7 @@ local function rebuild()
         local bi=ns.GetContainerItemInfo(bag,slot)
         if bi and bi.itemID then
             bagTotals[bi.itemID]=(bagTotals[bi.itemID] or 0)+(bi.stackCount or 1)
-            local sd=ns.ScrollItemIDs[bi.itemID];if sd then scrolls[#scrolls+1]=sd end
+            local sd=itemClassID(bi.itemID)~=RECIPE_CLASS_ID and ns.ScrollItemIDs[bi.itemID];if sd then scrolls[#scrolls+1]=sd end
         end
     end end
     carriedScrollRanks=ns.BestCarriedRanks(scrolls)
