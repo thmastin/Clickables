@@ -3,6 +3,7 @@ return function(ns,test)
   config=config or {}
   local timers,frames={},{}
   local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior",classIDs=config.classIDs or {}}
+  local function itemClass(id)if config.unknownClassIDs and config.unknownClassIDs[id] then return nil end;return client.classIDs[id] or 0 end
   client.names={}
   for itemID,data in pairs(ns.ScrollItemIDs)do client.names[itemID]=data.name:gsub(" I$","")end
   for itemID,data in pairs(ns.ElixirItemIDs)do client.names[itemID]=data.name end
@@ -18,12 +19,17 @@ return function(ns,test)
   env.wipe=function(t)for k in pairs(t)do t[k]=nil end end
   env.C_Timer={After=function(_,fn)timers[#timers+1]=fn end}
   env.C_EventUtils={IsEventValid=function()return true end}
-  env.C_Item={GetItemNameByID=function(id)return client.names and client.names[id] end,GetItemInfo=function(id)return client.names and client.names[id] end,RequestLoadItemDataByID=function(id)client.requested=client.requested or {};client.requested[id]=true end}
+  env.C_Item={
+   GetItemNameByID=function(id)return client.names and client.names[id] end,
+   GetItemInfo=function(id)return client.names[id],nil,nil,nil,nil,nil,nil,nil,nil,nil,nil,itemClass(id) end,
+   GetItemInfoInstant=function(id)
+    local classID=itemClass(id)
+    return id,classID==0 and "Consumable" or "Item",classID==0 and "Food & Drink" or "Recipe",nil,nil,classID,0
+   end,
+   RequestLoadItemDataByID=function(id)client.requested=client.requested or {};client.requested[id]=true end
+  }
+  env.GetItemInfo=nil;env.GetItemInfoInstant=nil
   env.Enum={ItemClass={Consumable=0,Recipe=9}}
-  env.GetItemInfoInstant=function(id)
-   local classID=client.classIDs[id] or 0
-   return id,classID==0 and "Consumable" or "Item",classID==0 and "Food & Drink" or "Recipe",nil,nil,classID,0
-  end
   env.C_Container={
    GetContainerNumSlots=function(bag)return #(client.bags[bag] or {})end,
    GetContainerItemInfo=function(bag,slot)return client.bags[bag] and client.bags[bag][slot]end,
@@ -144,6 +150,7 @@ return function(ns,test)
    {[0]={[1]={"Use: Eat to become Well Fed and gain 3 Strength for 15 min."},[2]={"Use: Eat to become Well Fed and gain 2 Strength for 15 min."}}},
    {classIDs={[3679]=9,[3220]=0}})
   c:load()
+  assert(env.GetItemInfo==nil and env.GetItemInfoInstant==nil,"Forever mock should expose class APIs only on C_Item")
   assert(c.button:GetAttribute("item1")=="item:3220","Blood Sausage should win while recipe is excluded")
   c.bags[0][3]={itemID=100001,stackCount=1};c.bags[0][4]={itemID=5758,stackCount=1}
   c.bags[0][5]={itemID=6948,stackCount=1};c.bags[0][6]={itemID=2454,stackCount=1}
@@ -160,6 +167,14 @@ return function(ns,test)
   end
   assert(found,"debug should report recipe exclusion")
   assert(#unexpectedSkipped==0,"gear and openable lockbox should not produce skipped lines: "..table.concat(unexpectedSkipped," | "))
+
+  local unknown,unknownEnv=mockClient(nil,{[0]={{itemID=3679,stackCount=1},{itemID=3220,stackCount=1}}},
+   {[0]={[1]={"Use: Eat to become Well Fed and gain 3 Strength for 15 min."},[2]={"Use: Eat to become Well Fed and gain 2 Strength for 15 min."}}},
+   {unknownClassIDs={[3679]=true}})
+  unknown.names[3679]="Recipe: Blood Sausage"
+  unknown:load()
+  assert(unknown.button:GetAttribute("item1")=="item:3220","unknown-class recipe name should be excluded while Blood Sausage remains eligible")
+  assert(unknownEnv.GetItemInfo==nil and unknownEnv.GetItemInfoInstant==nil)
  end)
 
  test("recipe tooltip cannot enter elixir or scroll candidates",function()
