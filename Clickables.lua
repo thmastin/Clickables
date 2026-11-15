@@ -211,9 +211,11 @@ local function itemData(bag,slot)
             if errorState.debug then print("Clickables elixir "..scoreText(knownName or "Elixir",{{stat=stat,bonus=1}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
         end
     end
-    if errorState.debug and (recipe or not consumable) then
+    local hasRelevantUse=use~=nil or (use and use:lower():find("well fed",1,true)~=nil)
+    local hasStatItemMapping=ns.ScrollItemIDs[info.itemID]~=nil or ns.ElixirItemIDs[info.itemID]~=nil
+    if errorState.debug and (recipe or not consumable) and (hasRelevantUse or hasStatItemMapping) and kind~="openable" and kind~="quest" then
         local name=knownName or ns.GetItemName(info.itemID) or tostring(info.itemID)
-        print(name.." ("..info.itemID.."): skipped, "..(recipe and "recipe" or "not a consumable"))
+        print("Clickables "..name.." ("..info.itemID.."): skipped, "..(recipe and "recipe" or "not a consumable"))
     end
     if kind then data.kind=kind;if kind=="quest" then data.reason="Starts a quest you don't have" end end
     if data.kind then return data end

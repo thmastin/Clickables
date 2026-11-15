@@ -142,10 +142,18 @@ return function(ns,test)
    {classIDs={[3679]=9,[3220]=0}})
   c:load()
   assert(c.button:GetAttribute("item1")=="item:3220","Blood Sausage should win while recipe is excluded")
+  c.bags[0][3]={itemID=100001,stackCount=1};c.bags[0][4]={itemID=5758,stackCount=1}
+  c.classIDs[100001]=4;c.classIDs[5758]=1
+  c.tooltipBySlot[0][3]={"Equip: Increases Strength by 7."}
   c.names[3679]="Recipe: Blood Sausage"
   env.SlashCmdList.CLICKABLES("debug");c:fire("BAG_UPDATE_DELAYED");c:flush()
-  local found=false;for _,line in ipairs(c.printed)do if line:find("Recipe: Blood Sausage (3679): skipped, recipe",1,true) then found=true end end
+  local found,unexpectedSkipped= false,{}
+  for _,line in ipairs(c.printed)do
+   if line:find("Clickables Recipe: Blood Sausage (3679): skipped, recipe",1,true) then found=true end
+   if line:find("skipped",1,true) and (line:find("100001",1,true) or line:find("5758",1,true)) then unexpectedSkipped[#unexpectedSkipped+1]=line end
+  end
   assert(found,"debug should report recipe exclusion")
+  assert(#unexpectedSkipped==0,"gear and openable lockbox should not produce skipped lines: "..table.concat(unexpectedSkipped," | "))
  end)
 
  test("recipe tooltip cannot enter elixir or scroll candidates",function()
