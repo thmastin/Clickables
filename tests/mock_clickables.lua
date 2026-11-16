@@ -327,14 +327,30 @@ return function(ns,test)
   assert(env.ClickablesDB~=nil)
  end)
 
- test("identical scans print food debug lines only once",function()
+ test("debug toggle dumps immediately, identical scans stay quiet, changed scans dump again",function()
   local use="Use: If you spend at least 10 sec eating, you will become well fed and gain 1 Strength for 15 min. Additionally, experience gained from kills is increased by 5%."
-  local c,env=mockClient(nil,{[0]={}},{[0]={[1]={use}}});c:load()
-  env.SlashCmdList.CLICKABLES("debug");c.bags[0][1]={itemID=2888,stackCount=1};c:fire("BAG_UPDATE_DELAYED");c:flush()
-  local first=0;for _,line in ipairs(c.printed)do if line:find("Clickables food",1,true)then first=first+1 end end
+  local c,env=mockClient(nil,{[0]={{itemID=2888,stackCount=1},{itemID=954,stackCount=1},{itemID=2454,stackCount=1}}},{[0]={[1]={use}}});c:load()
+  local start=#c.printed;env.SlashCmdList.CLICKABLES("debug")
+  local first,firstScroll,firstElixir=0,0,0
+  for i=start+1,#c.printed do local line=c.printed[i];if line:find("Clickables food",1,true)then first=first+1 elseif line:find("Clickables scroll",1,true)then firstScroll=firstScroll+1 elseif line:find("Clickables elixir",1,true)then firstElixir=firstElixir+1 end end
+  assert(first>0 and firstScroll>0 and firstElixir>0,"enabling debug should dump all categories without a bag event")
   c:fire("BAG_UPDATE_DELAYED");c:flush()
-  local total=0;for _,line in ipairs(c.printed)do if line:find("Clickables food",1,true)then total=total+1 end end
-  assert(first>0 and total==first,"identical result should not repeat food diagnostics")
+  local totalFood,totalOther=0,0;for _,line in ipairs(c.printed)do if line:find("Clickables food",1,true)then totalFood=totalFood+1 elseif line:find("Clickables scroll",1,true)or line:find("Clickables elixir",1,true)then totalOther=totalOther+1 end end
+  assert(totalFood==first and totalOther==firstScroll+firstElixir,"identical result should not repeat category diagnostics")
+  c.bags[0][1].stackCount=2;c:fire("BAG_UPDATE_DELAYED");c:flush()
+  local changedFood,changedScroll,changedElixir=0,0,0
+  for _,line in ipairs(c.printed)do if line:find("Clickables food",1,true)then changedFood=changedFood+1 elseif line:find("Clickables scroll",1,true)then changedScroll=changedScroll+1 elseif line:find("Clickables elixir",1,true)then changedElixir=changedElixir+1 end end
+  assert(changedFood>totalFood and changedScroll>firstScroll and changedElixir>firstElixir,"changed queue should print every category again")
+ end)
+
+ test("class-filtered non-XP food reports its skip reason",function()
+  local use="Use: Eat to become Well Fed and gain 2 Attack Power for 15 min."
+  local c,env=mockClient(nil,{[0]={{itemID=5477,stackCount=1}}},{[0]={[1]={use}}},{className="WARLOCK",localizedClass="Warlock"});c:load()
+  assert(c.button:GetAttribute("item1")==nil,"non-XP food with a useless stat should stay filtered")
+  env.SlashCmdList.CLICKABLES("debug")
+  local found=false
+  for _,line in ipairs(c.printed)do if line:find("tier 1, class filter",1,true)then found=true end end
+  assert(found,"full debug dump should include class-filter skip reason and food tier")
  end)
 
  test("both talent-change events rebuild and rerank hybrid scrolls",function()

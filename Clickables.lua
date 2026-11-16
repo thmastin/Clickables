@@ -4,6 +4,16 @@ local getInstant=(C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
 local getInfo=(C_Item and C_Item.GetItemInfo) or GetItemInfo
 local errorState=ns.NewErrorState()
 local questLogState=ns.NewQuestLogState()
+local scanDebugLines,lastPrintedQueueSnapshot={},nil
+local forceDebugDump=false
+local function queueSnapshot(items)
+    local parts={}
+    for _,item in ipairs(items or {}) do parts[#parts+1]=table.concat({item.kind or "",item.itemID or "",item.tier or "",item.score or "",item.count or ""},":") end
+    return table.concat(parts,"|")
+end
+local function debugLine(line)
+    if errorState.debug then scanDebugLines[#scanDebugLines+1]=line end
+end
 local function safe(label,fn) return function(...)
     local args={...}
     return ns.SafeCall(errorState,label,function() return fn(unpack(args)) end,GetTime and GetTime() or 0,print)
@@ -160,6 +170,16 @@ local function itemData(bag,slot)
             food.tier=(useful or not food.xp) and 1 or 2
             food.xpOffStat=food.tier==2
         end
+        if errorState.debug then
+            local reason
+            if not food then reason="no Well Fed text"
+            elseif foodActive then reason="Well Fed/eating aura active"
+            elseif not foodAllowed then reason="class filter"
+            elseif not DB.food then reason="Food disabled"
+            else reason="eligible" end
+            local tier=food and (food.tier==2 and "tier 2 (xp, off-stat)" or "tier 1") or "tier n/a"
+            debugLine("Clickables food "..scoreText(ns.GetItemName(info.itemID) or tostring(info.itemID),food and food.stats,currentClass,currentSpec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..tier..", "..reason)
+        end
     end
     if food and DB.food and not foodActive and foodAllowed then
         data.kind="food";data.bonus=food.bonus;data.score=food.score;data.tier=food.tier;data.xp=food.xp;data.xpOffStat=food.xpOffStat;data.reason="No Well Fed buff"
@@ -175,7 +195,7 @@ local function itemData(bag,slot)
         elseif active>=sd.rank then reason="buff active"
         elseif not allowed then reason="class filter"
         else data.kind="scroll";data.stat=sd.stat;data.score=score;data.reason=sd.name..", "..(active>0 and "weaker "..sd.stat.." buff active" or "no "..(sd.stat=="armor" and "Armor" or sd.stat:sub(1,1):upper()..sd.stat:sub(2)).." buff active");reason="eligible" end
-        if errorState.debug then print("Clickables scroll "..scoreText(knownName or sd.name,{{stat=sd.stat,bonus=sd.rank}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
+        debugLine("Clickables scroll "..scoreText(knownName or sd.name,{{stat=sd.stat,bonus=sd.rank}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason)
     elseif ed then
         local class=currentClass;local spec=currentSpec
         local score=ns.StatScore(ed.stat,ed.rank,class,spec)
@@ -186,7 +206,7 @@ local function itemData(bag,slot)
         elseif not allowed then reason="class filter"
         elseif conflict then reason="this elixir buff active"
         else data.kind="elixir";data.stat=ed.stat;data.score=score;data.reason=ed.name..", buff not active";reason="eligible" end
-        if errorState.debug then print("Clickables elixir "..scoreText(knownName or ed.name,{{stat=ed.stat,bonus=ed.rank}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
+        debugLine("Clickables elixir "..scoreText(knownName or ed.name,{{stat=ed.stat,bonus=ed.rank}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason)
     elseif not recipe and consumable and not sd and not ed and use then
         local stat=inferredUse(use)
         local label=(knownName or ns.GetItemName(info.itemID) or ""):lower()
@@ -199,7 +219,7 @@ local function itemData(bag,slot)
             elseif active then reason="buff active"
             elseif not allowed then reason="class filter"
             else data.kind="scroll";data.stat=stat;data.score=ns.StatScore(stat,1,class,spec);data.reason=(knownName or "Scroll")..", no matching buff active";reason="eligible" end
-            if errorState.debug then print("Clickables scroll "..scoreText(knownName or "Scroll",{{stat=stat,bonus=1}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
+            debugLine("Clickables scroll "..scoreText(knownName or "Scroll",{{stat=stat,bonus=1}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason)
         elseif stat and label:find("elixir",1,true) then
             local category=use:lower():find("guardian",1,true) and "guardian" or (use:lower():find("battle",1,true) and "battle")
             local allowed=ns.ClassAllows(class,spec,stat,DB.classFilterOverride)
@@ -210,14 +230,14 @@ local function itemData(bag,slot)
             elseif conflict then reason=category.." elixir active"
             elseif category then data.kind="elixir";data.stat=stat;data.score=ns.StatScore(stat,1,class,spec);data.reason=(knownName or "Elixir")..", no "..category.." elixir active";reason="eligible"
             else reason="unknown elixir category" end
-            if errorState.debug then print("Clickables elixir "..scoreText(knownName or "Elixir",{{stat=stat,bonus=1}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
+            debugLine("Clickables elixir "..scoreText(knownName or "Elixir",{{stat=stat,bonus=1}},class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason)
         end
     end
     local hasRelevantUse=use~=nil or (use and use:lower():find("well fed",1,true)~=nil)
     local hasStatItemMapping=ns.ScrollItemIDs[info.itemID]~=nil or ns.ElixirItemIDs[info.itemID]~=nil
     if errorState.debug and (recipe or not consumable) and (hasRelevantUse or hasStatItemMapping) and kind~="openable" and kind~="quest" then
         local name=knownName or ns.GetItemName(info.itemID) or tostring(info.itemID)
-        print("Clickables "..name.." ("..info.itemID.."): skipped, "..(recipe and "recipe" or "not a consumable"))
+        debugLine("Clickables "..name.." ("..info.itemID.."): skipped, "..(recipe and "recipe" or "not a consumable"))
     end
     if kind then data.kind=kind;if kind=="quest" then data.reason="Starts a quest you don't have" end end
     if data.kind then return data end
@@ -228,6 +248,7 @@ local function updateView()
 end
 local function rebuild()
     if InCombatLockdown() then return end
+    scanDebugLines={}
     currentClass=select(2,UnitClass("player"));currentSpec=playerSpec();activeAuras=auras();local scrolls={};local bagTotals={}
     for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do
         local bi=ns.GetContainerItemInfo(bag,slot)
@@ -246,14 +267,21 @@ local function rebuild()
     local best=ns.BestFood(foods)
     if best then fresh[#fresh+1]=best end
     local unique=ns.DedupeQueue(fresh,bagTotals);ns.SortQueue(unique,DB.priority)
-    local changed=#queue~=#unique
-    if not changed then for i,item in ipairs(unique) do local old=queue[i];if not old or old.itemID~=item.itemID or old.kind~=item.kind or old.tier~=item.tier or old.score~=item.score or old.count~=item.count then changed=true;break end end end
     queue=unique
-    if errorState.debug and changed then
+    if errorState.debug then
         for _,food in ipairs(foods) do
             local status=food==best and "selected" or "not best eligible food"
             local tier=food.tier==2 and "tier 2 (xp, off-stat)" or "tier 1"
-            print("Clickables food "..(ns.GetItemName(food.itemID) or tostring(food.itemID)).." ("..food.itemID.." at "..bagName(food.bag,food.slot).."): "..tier..", "..status)
+            debugLine("Clickables food "..(ns.GetItemName(food.itemID) or tostring(food.itemID)).." ("..food.itemID.." at "..bagName(food.bag,food.slot).."): "..tier..", "..status)
+        end
+        local tied=false
+        if best then for _,food in ipairs(foods) do if food~=best and food.tier==best.tier and food.score==best.score then tied=true;break end end end
+        if tied then debugLine("Clickables food "..(best.tier==2 and "tier 2 (xp, off-stat)" or "tier 1").." tie -> smaller stack (total "..best.count..")") end
+        local snapshot=queueSnapshot(unique)
+        if forceDebugDump or snapshot~=lastPrintedQueueSnapshot then
+            for _,line in ipairs(scanDebugLines) do print(line) end
+            lastPrintedQueueSnapshot=snapshot
+            forceDebugDump=false
         end
     end
     updateView()
@@ -396,7 +424,9 @@ local function slashImpl(msg)
     if cmd=="errors" then
         if arg=="clear" then errorState.errors={} else for _,e in ipairs(errorState.errors) do print("Clickables error ["..tostring(e.time).."] "..e.label..": "..e.msg.."\n"..e.stack) end end
     elseif cmd=="debug" then
-        errorState.debug=not errorState.debug;print("Clickables debug mode: "..tostring(errorState.debug))
+        errorState.debug=not errorState.debug
+        if errorState.debug then lastPrintedQueueSnapshot=nil;forceDebugDump=true end
+        print("Clickables debug mode: "..tostring(errorState.debug))
         local clicks=frame.GetRegisteredClicks and table.concat({frame:GetRegisteredClicks()},", ") or "AnyUp, AnyDown (configured)"
         print("Clickables debug: ActionButtonUseKeyDown="..tostring(GetCVar and GetCVar("ActionButtonUseKeyDown"))..", clicks="..clicks)
     elseif cmd=="lock" then DB.locked=true elseif cmd=="unlock" then DB.locked=false elseif cmd=="scale" then DB.scale=tonumber(arg) or DB.scale;frame:SetScale(DB.scale) elseif cmd=="list" then
