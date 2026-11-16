@@ -315,6 +315,68 @@ return function(ns,test)
   end
  end)
 
+ test("Forever XP food ranks useful meals first and offers off-stat fallback",function()
+  local xp="Use: If you spend at least 10 sec eating, you will become well fed and gain 1 Intellect for 15 min. Additionally, experience gained from kills is increased by 5%."
+  local ap="Use: If you spend at least 10 sec eating, you will become well fed and gain 2 Attack Power for 15 min. Additionally, experience gained from kills is increased by 5%."
+  local stew,env=mockClient(nil,{[0]={{itemID=5477,stackCount=1},{itemID=6290,stackCount=1}}},{[0]={[1]={xp},[2]={ap}}},{className="WARLOCK",localizedClass="Warlock"})
+  stew:load();assert(stew.button:GetAttribute("item1")=="item:5477","useful Intellect food must beat off-stat XP food")
+  local only=mockClient(nil,{[0]={{itemID=6290,stackCount=1}}},{[0]={[1]={ap}}},{className="WARLOCK",localizedClass="Warlock"})
+  only:load();assert(only.button:GetAttribute("item1")=="item:6290","XP food should remain as a tier 2 fallback")
+  local warrior=mockClient(nil,{[0]={{itemID=5477,stackCount=1},{itemID=6290,stackCount=1}}},{[0]={[1]={xp},[2]={ap}}},{className="WARRIOR",localizedClass="Warrior"})
+  warrior:load();assert(warrior.button:GetAttribute("item1")=="item:6290","Attack Power food should be useful to warriors")
+  assert(env.ClickablesDB~=nil)
+ end)
+
+ test("debug toggle dumps immediately, identical scans stay quiet, changed scans dump again",function()
+  local use="Use: If you spend at least 10 sec eating, you will become well fed and gain 1 Strength for 15 min. Additionally, experience gained from kills is increased by 5%."
+  local c,env=mockClient(nil,{[0]={{itemID=2888,stackCount=1},{itemID=954,stackCount=1},{itemID=2454,stackCount=1}}},{[0]={[1]={use}}});c:load()
+  local start=#c.printed;env.SlashCmdList.CLICKABLES("debug")
+  local first,firstScroll,firstElixir=0,0,0
+  for i=start+1,#c.printed do local line=c.printed[i];if line:find("Clickables food",1,true)then first=first+1 elseif line:find("Clickables scroll",1,true)then firstScroll=firstScroll+1 elseif line:find("Clickables elixir",1,true)then firstElixir=firstElixir+1 end end
+  assert(first>0 and firstScroll>0 and firstElixir>0,"enabling debug should dump all categories without a bag event")
+  c:fire("BAG_UPDATE_DELAYED");c:flush()
+  local totalFood,totalOther=0,0;for _,line in ipairs(c.printed)do if line:find("Clickables food",1,true)then totalFood=totalFood+1 elseif line:find("Clickables scroll",1,true)or line:find("Clickables elixir",1,true)then totalOther=totalOther+1 end end
+  assert(totalFood==first and totalOther==firstScroll+firstElixir,"identical result should not repeat category diagnostics")
+  c.bags[0][1].stackCount=2;c:fire("BAG_UPDATE_DELAYED");c:flush()
+  local changedFood,changedScroll,changedElixir=0,0,0
+  for _,line in ipairs(c.printed)do if line:find("Clickables food",1,true)then changedFood=changedFood+1 elseif line:find("Clickables scroll",1,true)then changedScroll=changedScroll+1 elseif line:find("Clickables elixir",1,true)then changedElixir=changedElixir+1 end end
+  assert(changedFood>totalFood and changedScroll>firstScroll and changedElixir>firstElixir,"changed queue should print every category again")
+ end)
+
+ test("class-filtered non-XP food reports its skip reason",function()
+  local use="Use: Eat to become Well Fed and gain 2 Attack Power for 15 min."
+  local c,env=mockClient(nil,{[0]={{itemID=5477,stackCount=1}}},{[0]={[1]={use}}},{className="WARLOCK",localizedClass="Warlock"});c:load()
+  assert(c.button:GetAttribute("item1")==nil,"non-XP food with a useless stat should stay filtered")
+  env.SlashCmdList.CLICKABLES("debug")
+  local found=false
+  for _,line in ipairs(c.printed)do if line:find("tier 1, class filter",1,true)then found=true end end
+  assert(found,"full debug dump should include class-filter skip reason and food tier")
+ end)
+
+ test("itemID fallback XP food queues Smallfish for a warlock",function()
+  local c,env=mockClient(nil,{[0]={{itemID=6290,stackCount=1}}},nil,{className="WARLOCK",localizedClass="Warlock"});c:load()
+  assert(c.button:GetAttribute("item1")=="item:6290","fallback-only Smallfish should remain eligible at tier 2")
+  env.SlashCmdList.CLICKABLES("debug")
+  local found=false
+  for _,line in ipairs(c.printed)do
+   if line:find("tier 2 (xp, off-stat)",1,true) and line:find("source itemID fallback",1,true)then found=true end
+  end
+  assert(found,"debug should identify the fallback XP tier and source")
+ end)
+
+ test("empty consumable tooltip is retried and later parsed",function()
+  local c,env=mockClient(nil,{[0]={{itemID=6290,stackCount=1}}},{[0]={[1]={}}},{className="WARLOCK",localizedClass="Warlock"});c:load()
+  assert(c.button:GetAttribute("item1")=="item:6290","XP itemID fallback should cover the initially empty tooltip")
+  env.SlashCmdList.CLICKABLES("debug")
+  c.tooltipBySlot[0][1]={"Use: Eat to become well fed and gain 5 Attack Power for 15 min. Additionally, experience gained from kills is increased by 5%."}
+  c:fire("BAG_UPDATE_DELAYED");c:flush()
+  local found=false
+  for _,line in ipairs(c.printed)do
+   if line:find("source tooltip",1,true) and line:find("Eat to become well fed and gain 5 Attack Power",1,true)then found=true end
+  end
+  assert(found,"a later tooltip scan should parse the fresh Use text and report its source")
+ end)
+
  test("both talent-change events rebuild and rerank hybrid scrolls",function()
   local c=mockClient(nil,{[0]={{itemID=954,stackCount=1},{itemID=955,stackCount=1}}},nil,{className="PALADIN",localizedClass="Paladin",talentPoints={0,5,0}});c:load()
   assert(c.button:GetAttribute("item1")=="item:954","melee spec should queue Strength")

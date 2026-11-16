@@ -2,6 +2,12 @@
 
 All notable changes to Clickables are documented here.
 
+## [1.2.3] - 2026-11-16
+
+### Changed
+- Rank Forever Well Fed XP food as a tier 2 fallback when its stat is filtered for the player's class/spec; useful stat food remains tier 1.
+- Show tiered food debug lines only when the computed queue changes.
+
 ## [1.2.2] - 2026-11-15
 
 ### Fixed

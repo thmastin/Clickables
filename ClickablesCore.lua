@@ -9,8 +9,11 @@ ns.OpenableItemIDs = {
     [5758]=true, [5759]=true, [5760]=true, [5761]=true,
 }
 ns.FoodItemIDs = {
-    [2888]={name="Beer Basted Boar Ribs",stat="strength",bonus=1},
-    [6290]={name="Brilliant Smallfish",stat="attack_power",bonus=2},
+    [2888]={name="Beer Basted Boar Ribs",stat="strength",bonus=1,xp=true},
+    [6290]={name="Brilliant Smallfish",stat="attack_power",bonus=2,xp=true},
+    [5477]={name="Strider Stew",stat="intellect",bonus=1,xp=true},
+    [6888]={name="Herb Baked Egg",stat="stamina",bonus=1,xp=true},
+    [4592]={name="Longjaw Mud Snapper",stat="attack_power",bonus=10,xp=true},
 }
 -- Vanilla scroll IDs and their increasing buff ranks.
 ns.ScrollItemIDs = {
@@ -172,14 +175,14 @@ function ns.FoodTooltip(use)
     end
     local bonus=0
     for _,entry in ipairs(found) do if entry.bonus>bonus then bonus=entry.bonus end end
-    return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil)}
+    return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil),xp=lower:find("experience gained from kills is increased by 5%",1,true)~=nil,source="tooltip",useText=use}
 end
 function ns.FoodData(itemID,use)
     local food=ns.FoodTooltip(use)
     if food then return food end
     local mapped=ns.FoodItemIDs[itemID]
     if not mapped then return nil end
-    return {stats={{stat=mapped.stat,bonus=mapped.bonus}},bonus=mapped.bonus,stat=mapped.stat}
+    return {stats={{stat=mapped.stat,bonus=mapped.bonus}},bonus=mapped.bonus,stat=mapped.stat,xp=mapped.xp==true,source="itemID fallback"}
 end
 function ns.JoinTooltipLines(lines)
     return table.concat(lines or {}," ")
@@ -192,16 +195,18 @@ end
 function ns.FoodEligible(food,class,spec,override)
     if not food or not food.stats or #food.stats==0 then return true end
     if #food.stats>1 then return true end
-    return ns.ClassAllows(class,spec,food.stats[1].stat,override)
+    local allowed=ns.ClassAllows(class,spec,food.stats[1].stat,override)
+    return allowed or (food.xp and not override)
 end
 function ns.BestFood(items)
     local best
     for _,item in ipairs(items or {}) do
         local score=item.score or item.bonus or 0
         local bestScore=best and (best.score or best.bonus or 0) or nil
-        if not best or score>bestScore
-            or (score==bestScore and (item.count or 1)<(best.count or 1))
-            or (score==bestScore and (item.count or 1)==(best.count or 1) and (item.slotCount or item.count or 1)<(best.slotCount or best.count or 1)) then best=item end
+        local tier=item.tier or 1;local bestTier=best and (best.tier or 1) or nil
+        if not best or tier<bestTier or (tier==bestTier and score>bestScore)
+            or (tier==bestTier and score==bestScore and (item.count or 1)<(best.count or 1))
+            or (tier==bestTier and score==bestScore and (item.count or 1)==(best.count or 1) and (item.slotCount or item.count or 1)<(best.slotCount or best.count or 1)) then best=item end
     end
     return best
 end
