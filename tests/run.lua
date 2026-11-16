@@ -145,6 +145,8 @@ test("Forever XP food preserves XP flag and filters plain off-stat food",functio
  assert(xp.xp and not plain.xp)
  assert(ns.FoodEligible(xp,"WARLOCK",nil,false) and not ns.FoodEligible(plain,"WARLOCK",nil,false))
  assert(ns.FoodEligible(xp,"WARLOCK",nil,true))
+ for _,itemID in ipairs({6290,2888,5477,6888,4592})do assert(ns.FoodItemIDs[itemID] and ns.FoodData(itemID,nil).xp,"Forever XP food fallback should be flagged: "..itemID)end
+ for _,itemID in ipairs({17197,17198,5527,21023})do assert(not ns.FoodItemIDs[itemID],"plain Well Fed food must not be marked as XP fallback: "..itemID)end
 end)
 test("food tiers always rank useful food ahead of XP off-stat food",function()
  local off={itemID=6290,score=2,count=1,tier=2}

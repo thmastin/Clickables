@@ -353,6 +353,30 @@ return function(ns,test)
   assert(found,"full debug dump should include class-filter skip reason and food tier")
  end)
 
+ test("itemID fallback XP food queues Smallfish for a warlock",function()
+  local c,env=mockClient(nil,{[0]={{itemID=6290,stackCount=1}}},nil,{className="WARLOCK",localizedClass="Warlock"});c:load()
+  assert(c.button:GetAttribute("item1")=="item:6290","fallback-only Smallfish should remain eligible at tier 2")
+  env.SlashCmdList.CLICKABLES("debug")
+  local found=false
+  for _,line in ipairs(c.printed)do
+   if line:find("tier 2 (xp, off-stat)",1,true) and line:find("source itemID fallback",1,true)then found=true end
+  end
+  assert(found,"debug should identify the fallback XP tier and source")
+ end)
+
+ test("empty consumable tooltip is retried and later parsed",function()
+  local c,env=mockClient(nil,{[0]={{itemID=6290,stackCount=1}}},{[0]={[1]={}}},{className="WARLOCK",localizedClass="Warlock"});c:load()
+  assert(c.button:GetAttribute("item1")=="item:6290","XP itemID fallback should cover the initially empty tooltip")
+  env.SlashCmdList.CLICKABLES("debug")
+  c.tooltipBySlot[0][1]={"Use: Eat to become well fed and gain 5 Attack Power for 15 min. Additionally, experience gained from kills is increased by 5%."}
+  c:fire("BAG_UPDATE_DELAYED");c:flush()
+  local found=false
+  for _,line in ipairs(c.printed)do
+   if line:find("source tooltip",1,true) and line:find("Eat to become well fed and gain 5 Attack Power",1,true)then found=true end
+  end
+  assert(found,"a later tooltip scan should parse the fresh Use text and report its source")
+ end)
+
  test("both talent-change events rebuild and rerank hybrid scrolls",function()
   local c=mockClient(nil,{[0]={{itemID=954,stackCount=1},{itemID=955,stackCount=1}}},nil,{className="PALADIN",localizedClass="Paladin",talentPoints={0,5,0}});c:load()
   assert(c.button:GetAttribute("item1")=="item:954","melee spec should queue Strength")

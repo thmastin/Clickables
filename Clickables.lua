@@ -59,8 +59,13 @@ local function getText(itemID,bag,slot)
             if s:find(ITEM_LOCKED or "Locked",1,true) then locked=true end
         end
     end
+    local lineCount=scanTooltip:NumLines()
     scanTooltip:Hide();local use=#useParts>0 and ns.JoinTooltipLines(useParts) or nil
-    itemProperties[itemID]={open=open,quest=quest,use=use};return open,quest,locked,use
+    local classID
+    if getInstant then classID=select(6,getInstant(itemID)) end
+    if type(classID)~="number" and getInfo then classID=select(12,getInfo(itemID)) end
+    if lineCount>0 and (use~=nil or classID~=0) then itemProperties[itemID]={open=open,quest=quest,use=use} end
+    return open,quest,locked,use
 end
 local function playerSpec()
     if not GetTalentTabInfo then return nil end
@@ -178,7 +183,9 @@ local function itemData(bag,slot)
             elseif not DB.food then reason="Food disabled"
             else reason="eligible" end
             local tier=food and (food.tier==2 and "tier 2 (xp, off-stat)" or "tier 1") or "tier n/a"
-            debugLine("Clickables food "..scoreText(ns.GetItemName(info.itemID) or tostring(info.itemID),food and food.stats,currentClass,currentSpec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..tier..", "..reason)
+            local source=food and food.source or (use and "tooltip" or "itemID fallback")
+            local detail=source=="tooltip" and (": "..((food and food.useText or use or ""):sub(1,80))) or ""
+            debugLine("Clickables food "..scoreText(ns.GetItemName(info.itemID) or tostring(info.itemID),food and food.stats,currentClass,currentSpec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..tier..", "..reason..", source "..source..detail)
         end
     end
     if food and DB.food and not foodActive and foodAllowed then

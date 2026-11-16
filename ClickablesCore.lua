@@ -9,8 +9,11 @@ ns.OpenableItemIDs = {
     [5758]=true, [5759]=true, [5760]=true, [5761]=true,
 }
 ns.FoodItemIDs = {
-    [2888]={name="Beer Basted Boar Ribs",stat="strength",bonus=1},
-    [6290]={name="Brilliant Smallfish",stat="attack_power",bonus=2},
+    [2888]={name="Beer Basted Boar Ribs",stat="strength",bonus=1,xp=true},
+    [6290]={name="Brilliant Smallfish",stat="attack_power",bonus=2,xp=true},
+    [5477]={name="Strider Stew",stat="intellect",bonus=1,xp=true},
+    [6888]={name="Herb Baked Egg",stat="stamina",bonus=1,xp=true},
+    [4592]={name="Longjaw Mud Snapper",stat="attack_power",bonus=10,xp=true},
 }
 -- Vanilla scroll IDs and their increasing buff ranks.
 ns.ScrollItemIDs = {
@@ -172,14 +175,14 @@ function ns.FoodTooltip(use)
     end
     local bonus=0
     for _,entry in ipairs(found) do if entry.bonus>bonus then bonus=entry.bonus end end
-    return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil),xp=lower:find("experience gained from kills is increased by 5%",1,true)~=nil}
+    return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil),xp=lower:find("experience gained from kills is increased by 5%",1,true)~=nil,source="tooltip",useText=use}
 end
 function ns.FoodData(itemID,use)
     local food=ns.FoodTooltip(use)
     if food then return food end
     local mapped=ns.FoodItemIDs[itemID]
     if not mapped then return nil end
-    return {stats={{stat=mapped.stat,bonus=mapped.bonus}},bonus=mapped.bonus,stat=mapped.stat}
+    return {stats={{stat=mapped.stat,bonus=mapped.bonus}},bonus=mapped.bonus,stat=mapped.stat,xp=mapped.xp==true,source="itemID fallback"}
 end
 function ns.JoinTooltipLines(lines)
     return table.concat(lines or {}," ")
