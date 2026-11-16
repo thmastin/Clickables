@@ -153,20 +153,16 @@ local function itemData(bag,slot)
     if foodCandidate then
         local class=currentClass;local spec=currentSpec
         foodActive=ns.FoodAuraActive(activeAuras)
-        if food then foodAllowed=ns.FoodEligible(food,class,spec,DB.classFilterOverride);food.score=ns.ItemStatScore(food.stats,class,spec) end
-        local name=ns.GetItemName(info.itemID) or tostring(info.itemID)
-        if errorState.debug then
-            local skipReason
-            if not food then skipReason="no Well Fed text"
-            elseif foodActive then skipReason="Well Fed/eating aura active"
-            elseif not foodAllowed then skipReason="class filter"
-            elseif not DB.food then skipReason="Food disabled"
-            else skipReason="eligible" end
-            print("Clickables food "..scoreText(name,food and food.stats,class,spec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..skipReason)
+        if food then
+            foodAllowed=ns.FoodEligible(food,class,spec,DB.classFilterOverride)
+            food.score=ns.ItemStatScore(food.stats,class,spec)
+            local useful=DB.classFilterOverride or (food.score>0 and (#food.stats>1 or ns.ClassAllows(class,spec,food.stats[1].stat,false)))
+            food.tier=(useful or not food.xp) and 1 or 2
+            food.xpOffStat=food.tier==2
         end
     end
     if food and DB.food and not foodActive and foodAllowed then
-        data.kind="food";data.bonus=food.bonus;data.score=food.score;data.reason="No Well Fed buff"
+        data.kind="food";data.bonus=food.bonus;data.score=food.score;data.tier=food.tier;data.xp=food.xp;data.xpOffStat=food.xpOffStat;data.reason="No Well Fed buff"
     elseif sd then
         local class=currentClass;local spec=currentSpec
         local best=carriedScrollRanks and carriedScrollRanks[sd.stat] or sd.rank
@@ -248,17 +244,19 @@ local function rebuild()
     end
     local foods={};for i=#fresh,1,-1 do if fresh[i].kind=="food" then foods[#foods+1]=table.remove(fresh,i) end end
     local best=ns.BestFood(foods)
-    if errorState.debug then
+    if best then fresh[#fresh+1]=best end
+    local unique=ns.DedupeQueue(fresh,bagTotals);ns.SortQueue(unique,DB.priority)
+    local changed=#queue~=#unique
+    if not changed then for i,item in ipairs(unique) do local old=queue[i];if not old or old.itemID~=item.itemID or old.kind~=item.kind or old.tier~=item.tier or old.score~=item.score or old.count~=item.count then changed=true;break end end end
+    queue=unique
+    if errorState.debug and changed then
         for _,food in ipairs(foods) do
             local status=food==best and "selected" or "not best eligible food"
-            print("Clickables food "..(ns.GetItemName(food.itemID) or tostring(food.itemID)).." ("..food.itemID.." at "..bagName(food.bag,food.slot).."): "..status)
+            local tier=food.tier==2 and "tier 2 (xp, off-stat)" or "tier 1"
+            print("Clickables food "..(ns.GetItemName(food.itemID) or tostring(food.itemID)).." ("..food.itemID.." at "..bagName(food.bag,food.slot).."): "..tier..", "..status)
         end
-        local tied=false
-        if best then for _,food in ipairs(foods) do if food~=best and food.score==best.score then tied=true;break end end end
-        if tied then print("Clickables food tie -> smaller stack (total "..best.count..")") end
     end
-    if best then fresh[#fresh+1]=best end
-    local unique=ns.DedupeQueue(fresh,bagTotals);ns.SortQueue(unique,DB.priority);queue=unique;updateView()
+    updateView()
 end
 local refreshPending=false
 local combatCountPending=false

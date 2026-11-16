@@ -172,7 +172,7 @@ function ns.FoodTooltip(use)
     end
     local bonus=0
     for _,entry in ipairs(found) do if entry.bonus>bonus then bonus=entry.bonus end end
-    return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil)}
+    return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil),xp=lower:find("experience gained from kills is increased by 5%",1,true)~=nil}
 end
 function ns.FoodData(itemID,use)
     local food=ns.FoodTooltip(use)
@@ -192,16 +192,18 @@ end
 function ns.FoodEligible(food,class,spec,override)
     if not food or not food.stats or #food.stats==0 then return true end
     if #food.stats>1 then return true end
-    return ns.ClassAllows(class,spec,food.stats[1].stat,override)
+    local allowed=ns.ClassAllows(class,spec,food.stats[1].stat,override)
+    return allowed or (food.xp and not override)
 end
 function ns.BestFood(items)
     local best
     for _,item in ipairs(items or {}) do
         local score=item.score or item.bonus or 0
         local bestScore=best and (best.score or best.bonus or 0) or nil
-        if not best or score>bestScore
-            or (score==bestScore and (item.count or 1)<(best.count or 1))
-            or (score==bestScore and (item.count or 1)==(best.count or 1) and (item.slotCount or item.count or 1)<(best.slotCount or best.count or 1)) then best=item end
+        local tier=item.tier or 1;local bestTier=best and (best.tier or 1) or nil
+        if not best or tier<bestTier or (tier==bestTier and score>bestScore)
+            or (tier==bestTier and score==bestScore and (item.count or 1)<(best.count or 1))
+            or (tier==bestTier and score==bestScore and (item.count or 1)==(best.count or 1) and (item.slotCount or item.count or 1)<(best.slotCount or best.count or 1)) then best=item end
     end
     return best
 end

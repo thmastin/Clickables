@@ -315,6 +315,28 @@ return function(ns,test)
   end
  end)
 
+ test("Forever XP food ranks useful meals first and offers off-stat fallback",function()
+  local xp="Use: If you spend at least 10 sec eating, you will become well fed and gain 1 Intellect for 15 min. Additionally, experience gained from kills is increased by 5%."
+  local ap="Use: If you spend at least 10 sec eating, you will become well fed and gain 2 Attack Power for 15 min. Additionally, experience gained from kills is increased by 5%."
+  local stew,env=mockClient(nil,{[0]={{itemID=5477,stackCount=1},{itemID=6290,stackCount=1}}},{[0]={[1]={xp},[2]={ap}}},{className="WARLOCK",localizedClass="Warlock"})
+  stew:load();assert(stew.button:GetAttribute("item1")=="item:5477","useful Intellect food must beat off-stat XP food")
+  local only=mockClient(nil,{[0]={{itemID=6290,stackCount=1}}},{[0]={[1]={ap}}},{className="WARLOCK",localizedClass="Warlock"})
+  only:load();assert(only.button:GetAttribute("item1")=="item:6290","XP food should remain as a tier 2 fallback")
+  local warrior=mockClient(nil,{[0]={{itemID=5477,stackCount=1},{itemID=6290,stackCount=1}}},{[0]={[1]={xp},[2]={ap}}},{className="WARRIOR",localizedClass="Warrior"})
+  warrior:load();assert(warrior.button:GetAttribute("item1")=="item:6290","Attack Power food should be useful to warriors")
+  assert(env.ClickablesDB~=nil)
+ end)
+
+ test("identical scans print food debug lines only once",function()
+  local use="Use: If you spend at least 10 sec eating, you will become well fed and gain 1 Strength for 15 min. Additionally, experience gained from kills is increased by 5%."
+  local c,env=mockClient(nil,{[0]={}},{[0]={[1]={use}}});c:load()
+  env.SlashCmdList.CLICKABLES("debug");c.bags[0][1]={itemID=2888,stackCount=1};c:fire("BAG_UPDATE_DELAYED");c:flush()
+  local first=0;for _,line in ipairs(c.printed)do if line:find("Clickables food",1,true)then first=first+1 end end
+  c:fire("BAG_UPDATE_DELAYED");c:flush()
+  local total=0;for _,line in ipairs(c.printed)do if line:find("Clickables food",1,true)then total=total+1 end end
+  assert(first>0 and total==first,"identical result should not repeat food diagnostics")
+ end)
+
  test("both talent-change events rebuild and rerank hybrid scrolls",function()
   local c=mockClient(nil,{[0]={{itemID=954,stackCount=1},{itemID=955,stackCount=1}}},nil,{className="PALADIN",localizedClass="Paladin",talentPoints={0,5,0}});c:load()
   assert(c.button:GetAttribute("item1")=="item:954","melee spec should queue Strength")
