@@ -9,11 +9,13 @@ ns.OpenableItemIDs = {
     [5758]=true, [5759]=true, [5760]=true, [5761]=true,
 }
 ns.FoodItemIDs = {
+    [787]={name="Slitherskin Mackerel",stat="attack_power",bonus=6,xp=true},
     [2888]={name="Beer Basted Boar Ribs",stat="strength",bonus=1,xp=true},
     [6290]={name="Brilliant Smallfish",stat="attack_power",bonus=2,xp=true},
     [5477]={name="Strider Stew",stat="intellect",bonus=1,xp=true},
     [6888]={name="Herb Baked Egg",stat="stamina",bonus=1,xp=true},
     [4592]={name="Longjaw Mud Snapper",stat="attack_power",bonus=10,xp=true},
+    [5095]={name="Rainbow Fin Albacore",stat="spell_damage",bonus=1,xp=true},
 }
 -- Vanilla scroll IDs and their increasing buff ranks.
 ns.ScrollItemIDs = {
@@ -51,25 +53,25 @@ ns.ElixirItemIDs = {
 -- Centralized tuning table for class/spec eligibility.
 ns.ClassScrollRules = {
     WARRIOR={allow={stamina=true,armor=true,strength=true,agility=true,attack_power=true}}, ROGUE={allow={stamina=true,armor=true,strength=true,agility=true,attack_power=true}},
-    MAGE={allow={stamina=true,armor=true,intellect=true,spirit=true}}, WARLOCK={allow={stamina=true,armor=true,intellect=true,spirit=true}}, PRIEST={allow={stamina=true,armor=true,intellect=true,spirit=true}},
+    MAGE={allow={stamina=true,armor=true,intellect=true,spirit=true,spell_damage=true,spell_critical=true}}, WARLOCK={allow={stamina=true,armor=true,intellect=true,spirit=true,spell_damage=true,spell_critical=true}}, PRIEST={allow={stamina=true,armor=true,intellect=true,spirit=true,healing=true,mp5=true,spell_critical=true}},
     HUNTER={allow={stamina=true,armor=true,agility=true,intellect=true,attack_power=true}},
-    PALADIN={casterTabs={[1]=true},melee={strength=true,agility=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
-    SHAMAN={casterTabs={[1]=true,[3]=true},melee={strength=true,agility=true,intellect=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
-    DRUID={casterTabs={[1]=true,[3]=true},melee={strength=true,agility=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true}},
+    PALADIN={casterTabs={[1]=true},melee={strength=true,agility=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true,healing=true,mp5=true,spell_critical=true}},
+    SHAMAN={casterTabs={[1]=true,[3]=true},melee={strength=true,agility=true,intellect=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true,spell_damage=true,healing=true,mp5=true,spell_critical=true}},
+    DRUID={casterTabs={[1]=true,[3]=true},melee={strength=true,agility=true,stamina=true,armor=true,attack_power=true},caster={intellect=true,spirit=true,stamina=true,armor=true,spell_damage=true,healing=true,mp5=true,spell_critical=true}},
 }
 -- Baseline weights are AP-equivalent. Class defaults apply before a character
 -- has spent talent points; hybrid specs override them once their tree is known.
 ns.StatWeightRules = {
-    baseline={unknown=0,stamina=0.25,attack_power=1},
+    baseline={unknown=0,stamina=0.25,armor=0.25,attack_power=1},
     classDefaults={
         WARRIOR={strength=2}, ROGUE={agility=2}, HUNTER={agility=2},
-        MAGE={intellect=2,spirit=2}, WARLOCK={intellect=2,spirit=2}, PRIEST={intellect=2,spirit=2},
-        PALADIN={strength=2}, SHAMAN={strength=2}, DRUID={strength=2,agility=2},
+        MAGE={intellect=2,spirit=1.5,spell_damage=1,spell_critical=1.5}, WARLOCK={intellect=2,spirit=1.5,spell_damage=1,spell_critical=1.5}, PRIEST={intellect=2,spirit=1.5,healing=2,mp5=1.5,spell_critical=0.5},
+        PALADIN={strength=2,spirit=0.5,healing=1,mp5=0.5}, SHAMAN={strength=2,spirit=0.5,healing=1,mp5=0.5}, DRUID={strength=2,agility=2,spirit=0.75,healing=1,mp5=0.5},
     },
     specs={
-        PALADIN={melee={strength=2},caster={intellect=2,spirit=2}},
-        SHAMAN={melee={strength=2},caster={intellect=2,spirit=2}},
-        DRUID={melee={strength=2,agility=2},caster={intellect=2,spirit=2}},
+        PALADIN={melee={strength=2},caster={intellect=2,spirit=1,healing=2,mp5=1.5,spell_critical=0.5}},
+        SHAMAN={melee={strength=2},caster={intellect=2,spirit=0.75,spell_damage=1,healing=2,mp5=1.25,spell_critical=1}},
+        DRUID={melee={strength=2,agility=2},caster={intellect=2,spirit=1,spell_damage=1,healing=2,mp5=1.25,spell_critical=1}},
     },
 }
 function ns.NewErrorState()
@@ -137,14 +139,29 @@ function ns.BestCarriedRanks(items)
 end
 function ns.DedupeQueue(items,countByID)
     local byID,out={},{}
+    local function preferred(a,b)
+        local aStack=a.slotCount or 1;local bStack=b.slotCount or 1
+        if aStack~=bStack then return aStack<bStack end
+        local aBag=a.bag or math.huge;local bBag=b.bag or math.huge
+        if aBag~=bBag then return aBag<bBag end
+        return (a.slot or math.huge)<(b.slot or math.huge)
+    end
     for _,item in ipairs(items or {}) do
         local old=byID[item.itemID]
         if old then
             old.count=countByID and countByID[item.itemID] or math.max(old.count or 1,item.count or 1)
-            if (item.score or 0)>(old.score or 0) then old.score=item.score end
+            local score=math.max(old.score or 0,item.score or 0)
+            if preferred(item,old) then
+                item.count=old.count;item.score=score;byID[item.itemID]=item
+                for i,candidate in ipairs(out) do if candidate==old then out[i]=item;break end end
+            else old.score=score end
         else byID[item.itemID]=item;out[#out+1]=item end
     end
     return out
+end
+function ns.RequiredLevel(text)
+    local level=text and text:lower():match("requires level%s+(%d+)")
+    return level and tonumber(level) or nil
 end
 function ns.ElixirConflict(auras, category)
     return false
@@ -167,15 +184,27 @@ function ns.FoodTooltip(use)
     if not use then return nil end
     local lower=use:lower()
     if not lower:find("well fed",1,true) then return nil end
-    local stats={"stamina","intellect","spirit","strength","agility","attack power"}
-    local found={}
-    for _,stat in ipairs(stats) do
-        local n=lower:match("([%d%.]+)%s+"..stat) or lower:match(stat.."%s+by%s+([%d%.]+)")
-        if n then found[#found+1]={stat=stat=="attack power" and "attack_power" or stat,bonus=tonumber(n) or 0} end
+    local stats={
+        {phrase="attack power",key="attack_power"}, {phrase="spell damage",key="spell_damage"},
+        {phrase="healing spells",key="healing"}, {phrase="healing",key="healing"},
+        {phrase="spell power",key="spell_damage"}, {phrase="mana every 5 sec",key="mp5"},
+        {phrase="mana every 5 seconds",key="mp5"}, {phrase="mp5",key="mp5"},
+        {phrase="spell critical",key="spell_critical"}, {phrase="armor",key="armor"},
+        {phrase="stamina",key="stamina"}, {phrase="intellect",key="intellect"},
+        {phrase="spirit",key="spirit"}, {phrase="strength",key="strength"}, {phrase="agility",key="agility"},
+    }
+    local found,foundKeys={},{}
+    for _,entry in ipairs(stats) do
+        if not foundKeys[entry.key] then
+            local n=lower:match("([%d%.]+)%s+"..entry.phrase) or lower:match(entry.phrase.."%s+by%s+([%d%.]+)")
+            if n then found[#found+1]={stat=entry.key,bonus=tonumber(n) or 0,phrase=entry.phrase};foundKeys[entry.key]=true end
+        end
     end
+    local rawStatPhrase
+    if #found==0 then rawStatPhrase=lower:match("gain%s+[%d%.]+%s+([^%.]+)%s+for%s+%d+%s+min") end
     local bonus=0
     for _,entry in ipairs(found) do if entry.bonus>bonus then bonus=entry.bonus end end
-    return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil),xp=lower:find("experience gained from kills is increased by 5%",1,true)~=nil,source="tooltip",useText=use}
+    return {stats=found,bonus=bonus,stat=(#found==1 and found[1].stat or nil),rawStatPhrase=rawStatPhrase,xp=lower:find("experience gained from kills is increased by 5%",1,true)~=nil,source="tooltip",useText=use}
 end
 function ns.FoodData(itemID,use)
     local food=ns.FoodTooltip(use)
@@ -204,9 +233,23 @@ function ns.BestFood(items)
         local score=item.score or item.bonus or 0
         local bestScore=best and (best.score or best.bonus or 0) or nil
         local tier=item.tier or 1;local bestTier=best and (best.tier or 1) or nil
-        if not best or tier<bestTier or (tier==bestTier and score>bestScore)
-            or (tier==bestTier and score==bestScore and (item.count or 1)<(best.count or 1))
-            or (tier==bestTier and score==bestScore and (item.count or 1)==(best.count or 1) and (item.slotCount or item.count or 1)<(best.slotCount or best.count or 1)) then best=item end
+        local better=not best or tier<bestTier or (tier==bestTier and score>bestScore)
+        if best and tier==bestTier and score==bestScore then
+            local count=item.count or 1;local bestCount=best.count or 1
+            local stack=item.slotCount or count;local bestStack=best.slotCount or bestCount
+            if count<bestCount then better=true
+            elseif count==bestCount then
+                if stack<bestStack then better=true
+                elseif stack==bestStack then
+                    better=(item.itemID or math.huge)<(best.itemID or math.huge)
+                    if item.itemID==best.itemID then
+                        local bag=item.bag or math.huge;local bestBag=best.bag or math.huge
+                        better=bag<bestBag or (bag==bestBag and (item.slot or math.huge)<(best.slot or math.huge))
+                    end
+                end
+            end
+        end
+        if better then best=item end
     end
     return best
 end

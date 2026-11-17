@@ -2,13 +2,13 @@ return function(ns,test)
  local function mockClient(saved,bags,tooltipBySlot,config)
   config=config or {}
   local timers,frames={},{}
-  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior",classIDs=config.classIDs or {}}
+  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,level=config.level or 60,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior",classIDs=config.classIDs or {}}
   local function itemClass(id)if config.unknownClassIDs and config.unknownClassIDs[id] then return nil end;return client.classIDs[id] or 0 end
   client.names={}
   for itemID,data in pairs(ns.ScrollItemIDs)do client.names[itemID]=data.name:gsub(" I$","")end
   for itemID,data in pairs(ns.ElixirItemIDs)do client.names[itemID]=data.name end
   local env=setmetatable({},{__index=_G})
-  env._G=env;env.unpack=unpack;env.ClickablesDB=saved;env.NUM_BAG_SLOTS=0
+  env._G=env;env.unpack=unpack;env.ClickablesDB=saved;env.NUM_BAG_SLOTS=config.numBagSlots or 0
   env.UIParent={GetWidth=function()return 800 end,GetHeight=function()return 600 end}
   env.GetTime=function()return client.now end
   env.GetCVar=function()return client.keyDown and "1" or "0" end
@@ -44,6 +44,7 @@ return function(ns,test)
   env.C_QuestLog={IsOnQuest=function(questID)return client.onQuest[questID] or false end,IsQuestFlaggedCompleted=function(questID)return client.completed[questID] or false end}
   env.GetTalentTabInfo=function(tab)return nil,nil,client.talentPoints[tab] or 0 end
   env.UnitClass=function()return client.localizedClass,client.className end
+  env.UnitLevel=function()return client.level end
   env.C_Item.GetItemIconByID=function()return 134400 end
   env.ITEM_OPENABLE="Right Click to Open";env.ITEM_STARTS_QUEST="This Item Begins a Quest";env.ITEM_LOCKED="Locked"
   env.SlashCmdList={};env.InterfaceOptions_AddCategory=function()end
@@ -327,6 +328,73 @@ return function(ns,test)
   assert(env.ClickablesDB~=nil)
  end)
 
+ test("Rainbow Fin Albacore beats melee food for warlock; warrior keeps Mackerel",function()
+  local albacore="Use: Eat to become Well Fed and gain 1 Spell Damage for 15 min. Additionally, experience gained from kills is increased by 5%."
+  local mackerel="Use: Eat to become Well Fed and gain 1 Attack Power for 15 min. Additionally, experience gained from kills is increased by 5%."
+  local warlock,warlockEnv=mockClient(nil,{[0]={{itemID=5095,stackCount=1},{itemID=787,stackCount=1},{itemID=6290,stackCount=1}}},{[0]={[1]={albacore}}},{className="WARLOCK",localizedClass="Warlock"})
+  warlock:load();assert(warlock.button:GetAttribute("item1")=="item:5095","Spell Damage Albacore should be useful tier 1 over Mackerel and Smallfish")
+  warlockEnv.SlashCmdList.CLICKABLES("debug")
+  local tierOne=false;for _,line in ipairs(warlock.printed)do if line:find("5095",1,true) and line:find("tier 1",1,true)then tierOne=true end end
+  assert(tierOne,"Albacore must be explicitly ranked tier 1")
+  local warrior=mockClient(nil,{[0]={{itemID=5095,stackCount=1},{itemID=787,stackCount=1}}},{[0]={[1]={albacore},[2]={mackerel}}},{className="WARRIOR",localizedClass="Warrior"})
+  warrior:load();assert(warrior.button:GetAttribute("item1")=="item:787","Warrior should prefer Attack Power Mackerel")
+ end)
+
+ test("priest values healing food and unknown Well Fed food stays tier 2 with raw phrase",function()
+  local healing="Use: Eat to become Well Fed and gain 1 Healing for 15 min."
+  local priest=mockClient(nil,{[0]={{itemID=17197,stackCount=1},{itemID=5527,stackCount=1}}},{[0]={[1]={"Use: Eat to become Well Fed and gain 2 Strength for 15 min."},[2]={healing}}},{className="PRIEST",localizedClass="Priest"})
+  priest:load();assert(priest.button:GetAttribute("item1")=="item:5527","Priest should choose healing food")
+  local unknown,env=mockClient(nil,{[0]={{itemID=77777,stackCount=1}}},{[0]={[1]={"Use: Eat to become Well Fed and gain 7 Nature Resistance for 15 min."}}},{className="WARLOCK",localizedClass="Warlock"})
+  unknown:load();assert(unknown.button:GetAttribute("item1")=="item:77777","unknown Well Fed stat should remain eligible")
+  env.SlashCmdList.CLICKABLES("debug")
+  local found=false
+  for _,line in ipairs(unknown.printed)do if line:find("tier 2",1,true) and line:find("unknown stat phrase: nature resistance",1,true)then found=true end end
+  assert(found,"unknown tier 2 Well Fed food should log its raw stat phrase")
+ end)
+
+ test("food elixir and scroll above player level are skipped with debug reason",function()
+  local cases={
+   {id=2888,name="food",use="Use: Eat to become Well Fed and gain 1 Strength for 15 min."},
+   {id=2454,name="elixir",use="Use: Increases Strength by 5."},
+   {id=954,name="scroll",use="Use: Increases Strength by 5."},
+  }
+  for _,case in ipairs(cases)do
+   local c,env=mockClient(nil,{[0]={{itemID=case.id,stackCount=1}}},{[0]={[1]={case.use,"Requires Level 50"}}},{className="WARRIOR",localizedClass="Warrior",level=20})
+   c:load();assert(c.button:GetAttribute("item1")==nil,case.name.." above-level requirement must be skipped")
+   env.SlashCmdList.CLICKABLES("debug")
+   local found=false;for _,line in ipairs(c.printed)do if line:find("level 50 required",1,true) and line:find("Clickables "..case.name,1,true)then found=true end end
+   assert(found,case.name.." debug should state level 50 required")
+  end
+  local allowed=mockClient(nil,{[0]={{itemID=2888,stackCount=1}}},{[0]={[1]={"Use: Eat to become Well Fed and gain 1 Strength for 15 min.","Requires Level 20"}}},{level=20})
+  allowed:load();assert(allowed.button:GetAttribute("item1")=="item:2888","requirement equal to player level should be allowed")
+  local leveling=mockClient(nil,{[0]={{itemID=2888,stackCount=1}}},{[0]={[1]={"Use: Eat to become Well Fed and gain 1 Strength for 15 min.","Requires Level 30"}}},{level=20})
+  leveling:load();assert(leveling.button:GetAttribute("item1")==nil)
+  assert(leveling.eventFrame.events.PLAYER_LEVEL_UP and not leveling.eventFrame.events.BANKFRAME_OPENED and not leveling.eventFrame.events.BANKFRAME_CLOSED)
+  leveling.level=30;leveling:fire("PLAYER_LEVEL_UP");leveling:flush()
+  assert(leveling.button:GetAttribute("item1")=="item:2888","level-up should refresh newly eligible food")
+ end)
+
+ test("duplicate food stacks choose smallest carried stack then bag and slot",function()
+  local use="Use: Eat to become Well Fed and gain 1 Strength for 15 min."
+  local c,env=mockClient(nil,{[0]={{itemID=2888,stackCount=4},{itemID=2888,stackCount=2}},[1]={{itemID=2888,stackCount=2}}},{[0]={[1]={use},[2]={use}},[1]={[1]={use}}},{numBagSlots=1})
+  c:load();env.SlashCmdList.CLICKABLES("debug")
+  local selected
+  for _,line in ipairs(c.printed)do if line:find("2888",1,true) and line:find("selected",1,true)then selected=line end end
+  assert(selected and selected:find("2888 at 0 2",1,true),"equal smallest stacks should select the lower bag then slot: "..table.concat(c.printed," | "))
+  local bankOnly=mockClient(nil,{[-1]={{itemID=2888,stackCount=1}}},{[-1]={[1]={use}}})
+  bankOnly:load();assert(bankOnly.button:GetAttribute("item1")==nil,"bank items must not be scanned into the usable queue")
+ end)
+
+ test("food debug combines scan and selection into one line per stack",function()
+  local use="Use: Eat to become Well Fed and gain 1 Strength for 15 min."
+  local c,env=mockClient(nil,{[0]={{itemID=2888,stackCount=1},{itemID=5477,stackCount=1}}},{[0]={[1]={use},[2]={"Use: Eat to become Well Fed and gain 1 Intellect for 15 min."}}},{className="MAGE",localizedClass="Mage"})
+  c:load();env.SlashCmdList.CLICKABLES("debug")
+  local lines={};for _,line in ipairs(c.printed)do if line:find("Clickables food",1,true)then lines[#lines+1]=line end end
+  assert(#lines==2,"each food stack should have exactly one debug line")
+  local selected=0;for _,line in ipairs(lines)do if line:find("selected",1,true)then selected=selected+1 end end
+  assert(selected==1,"the selected result should be included on its scan line")
+ end)
+
  test("debug toggle dumps immediately, identical scans stay quiet, changed scans dump again",function()
   local use="Use: If you spend at least 10 sec eating, you will become well fed and gain 1 Strength for 15 min. Additionally, experience gained from kills is increased by 5%."
   local c,env=mockClient(nil,{[0]={{itemID=2888,stackCount=1},{itemID=954,stackCount=1},{itemID=2454,stackCount=1}}},{[0]={[1]={use}}});c:load()
@@ -349,7 +417,7 @@ return function(ns,test)
   assert(c.button:GetAttribute("item1")==nil,"non-XP food with a useless stat should stay filtered")
   env.SlashCmdList.CLICKABLES("debug")
   local found=false
-  for _,line in ipairs(c.printed)do if line:find("tier 1, class filter",1,true)then found=true end end
+  for _,line in ipairs(c.printed)do if line:find("tier 2",1,true) and line:find("class filter",1,true)then found=true end end
   assert(found,"full debug dump should include class-filter skip reason and food tier")
  end)
 

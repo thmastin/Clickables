@@ -139,6 +139,31 @@ test("Forever food Use tooltips parse Strength and Attack Power",function()
  assert(fish and fish.stats[1].stat=="attack_power" and fish.bonus==2)
  assert(ns.FoodItemIDs[2888].stat=="strength" and ns.FoodItemIDs[6290].stat=="attack_power")
 end)
+test("Forever food parses caster, healer, mana, critical, armor, and unknown stats",function()
+ local cases={
+  {"Spell Damage","spell_damage"},{"healing spells","healing"},{"Healing","healing"},
+  {"Spell Power","spell_damage"},{"mana every 5 sec","mp5"},{"mp5","mp5"},
+  {"Spell Critical","spell_critical"},{"Armor","armor"},
+ }
+ for _,case in ipairs(cases)do
+  local food=ns.FoodTooltip("Use: Eat to become Well Fed and gain 1 "..case[1].." for 15 min.")
+  assert(food and food.stats[1] and food.stats[1].stat==case[2],"failed stat phrase: "..case[1])
+ end
+ local healingSpells=ns.FoodTooltip("Use: Eat to become Well Fed and gain 3 healing spells for 15 min.")
+ assert(#healingSpells.stats==1 and healingSpells.stats[1].stat=="healing" and healingSpells.stats[1].bonus==3,"healing spells must map to healing once")
+ local unknown=ns.FoodTooltip("Use: Eat to become Well Fed and gain 7 Nature Resistance for 15 min.")
+ assert(unknown and #unknown.stats==0 and unknown.rawStatPhrase=="nature resistance")
+ assert(ns.StatWeight("WARLOCK",nil,"spell_damage")>0)
+ assert(ns.StatWeight("PRIEST",nil,"healing")>0 and ns.StatWeight("PRIEST",nil,"mp5")>0)
+ assert(ns.FoodItemIDs[787].bonus==6 and ns.FoodData(787,nil).stats[1].bonus==6,"Slitherskin Mackerel fallback should match its 6 AP tooltip")
+ assert(ns.StatWeight("WARRIOR",nil,"healing")==0 and ns.StatWeight("WARRIOR",nil,"mp5")==0)
+end)
+test("required level parser reads English tooltip requirement",function()
+ assert(ns.RequiredLevel("Requires Level 12")==12)
+ assert(ns.RequiredLevel("REQUIRES LEVEL 60")==60)
+ assert(ns.RequiredLevel("Requires level 100 skill") == 100)
+ assert(ns.RequiredLevel("Use: Eat to become Well Fed.")==nil)
+end)
 test("Forever XP food preserves XP flag and filters plain off-stat food",function()
  local xp=ns.FoodTooltip("If you spend at least 10 sec eating, you will become well fed and gain 2 Attack Power for 15 min. Additionally, Experience Gained From Kills Is Increased By 5%.")
  local plain=ns.FoodTooltip("If you spend at least 10 seconds eating, you will become well fed and gain 2 Attack Power for 15 min.")
@@ -166,6 +191,26 @@ test("Attack Power food is limited to melee and hunter",function()
  assert(ns.FoodEligible(ap,"SHAMAN","melee",false))
  assert(not ns.FoodEligible(ap,"SHAMAN","caster",false))
  assert(not ns.FoodEligible(ap,"PRIEST",nil,false))
+end)
+test("caster damage and healing stats filter by class",function()
+ local spell=ns.FoodTooltip("Use: Eat to become Well Fed and gain 1 Spell Damage for 15 min.")
+ local healing=ns.FoodTooltip("Use: Eat to become Well Fed and gain 1 Healing for 15 min.")
+ assert(ns.FoodEligible(spell,"WARLOCK",nil,false) and not ns.FoodEligible(spell,"WARRIOR",nil,false))
+ assert(ns.FoodEligible(healing,"PRIEST",nil,false) and not ns.FoodEligible(healing,"WARRIOR",nil,false))
+end)
+test("caster and healer stat weights are explicit by class and spec",function()
+ local checks={
+  {"MAGE",nil,"healing",0},{"MAGE",nil,"mp5",0},{"MAGE",nil,"spell_critical",1.5},{"MAGE",nil,"spirit",1.5},
+  {"WARLOCK",nil,"healing",0},{"WARLOCK",nil,"mp5",0},{"WARLOCK",nil,"spell_critical",1.5},{"WARLOCK",nil,"spirit",1.5},
+  {"PRIEST",nil,"healing",2},{"PRIEST",nil,"mp5",1.5},{"PRIEST",nil,"spell_critical",0.5},{"PRIEST",nil,"spirit",1.5},
+  {"DRUID","caster","healing",2},{"DRUID","caster","mp5",1.25},{"DRUID","caster","spell_critical",1},{"DRUID","caster","spirit",1},
+  {"DRUID","melee","healing",0},{"DRUID","melee","mp5",0},{"DRUID","melee","spell_critical",0},{"DRUID","melee","spirit",0},
+  {"SHAMAN","caster","healing",2},{"SHAMAN","caster","mp5",1.25},{"SHAMAN","caster","spell_critical",1},{"SHAMAN","caster","spirit",0.75},
+  {"SHAMAN","melee","healing",0},{"SHAMAN","melee","mp5",0},{"SHAMAN","melee","spell_critical",0},{"SHAMAN","melee","spirit",0},
+  {"PALADIN","caster","healing",2},{"PALADIN","caster","mp5",1.5},{"PALADIN","caster","spell_critical",0.5},{"PALADIN","caster","spirit",1},
+  {"PALADIN","melee","healing",0},{"PALADIN","melee","mp5",0},{"PALADIN","melee","spell_critical",0},{"PALADIN","melee","spirit",0},
+ }
+ for _,c in ipairs(checks)do assert(ns.StatWeight(c[1],c[2],c[3])==c[4],c[1].."/"..tostring(c[2]).." "..c[3].." weight")end
 end)
 test("zero talent points leave hybrid spec unknown",function()
  assert(ns.DominantTalentTab({0,0,0})==nil)
@@ -195,6 +240,11 @@ test("stat score tie favors smaller total count then smaller slot stack",functio
  assert(ns.BestFood({largerTotal,smallerTotal})==smallerTotal)
  local smallerSlot={itemID=3,score=2,count=5,slotCount=2};local largerSlot={itemID=4,score=2,count=5,slotCount=4}
  assert(ns.BestFood({largerSlot,smallerSlot})==smallerSlot)
+end)
+test("duplicate item queue selection prefers smallest carried stack, then bag and slot",function()
+ local duplicate={{itemID=8,bag=1,slot=2,slotCount=3},{itemID=8,bag=0,slot=4,slotCount=2},{itemID=8,bag=0,slot=2,slotCount=2}}
+ local q=ns.DedupeQueue(duplicate,{[8]=8})
+ assert(#q==1 and q[1].bag==0 and q[1].slot==2 and q[1].slotCount==2 and q[1].count==8)
 end)
 test("elixir aura uses spell ID or exact fallback",function()
  local elixir={aura="Greater Defense",auraSpellID=11349}
