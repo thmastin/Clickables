@@ -284,15 +284,7 @@ local function rebuild()
     end end
     carriedScrollRanks=ns.BestCarriedRanks(scrolls)
     local fresh={}
-    local scanBags={};for bag=0,NUM_BAG_SLOTS do scanBags[#scanBags+1]=bag end
-    scanBags[#scanBags+1]=-1;for bag=5,11 do scanBags[#scanBags+1]=bag end
-    for _,bag in ipairs(scanBags) do for slot=1,ns.GetContainerNumSlots(bag) do
-        local info=ns.GetContainerItemInfo(bag,slot)
-        local isBank=bag<0 or bag>NUM_BAG_SLOTS
-        if info and info.itemID and (not isBank or bagTotals[info.itemID]) then
-            local d=itemData(bag,slot);if d then d.isBank=isBank;fresh[#fresh+1]=d end
-        end
-    end end
+    for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local d=itemData(bag,slot); if d then fresh[#fresh+1]=d end end end
     for _,item in ipairs(fresh) do
         item.count=bagTotals[item.itemID] or 0
     end
@@ -472,7 +464,7 @@ end
 local slash=safe("slash command",slashImpl)
 SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
 local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED");events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-events:RegisterEvent("UNIT_AURA");events:RegisterEvent("QUEST_LOG_UPDATE");events:RegisterEvent("QUEST_REMOVED");events:RegisterEvent("BANKFRAME_OPENED");events:RegisterEvent("BANKFRAME_CLOSED");events:RegisterEvent("PLAYER_LEVEL_UP")
+events:RegisterEvent("UNIT_AURA");events:RegisterEvent("QUEST_LOG_UPDATE");events:RegisterEvent("QUEST_REMOVED");events:RegisterEvent("PLAYER_LEVEL_UP")
 if C_EventUtils and C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("PLAYER_TALENT_UPDATE") then events:RegisterEvent("PLAYER_TALENT_UPDATE") end
 events:RegisterEvent("CHARACTER_POINTS_CHANGED")
 events:SetScript("OnEvent",safe("event handler",function(_,event,name)
@@ -486,6 +478,6 @@ events:SetScript("OnEvent",safe("event handler",function(_,event,name)
     elseif event=="QUEST_LOG_UPDATE" or event=="QUEST_ACCEPTED" or event=="QUEST_REMOVED" then ns.MarkQuestLogReady(questLogState);scheduleRebuild()
     elseif event=="BAG_UPDATE_DELAYED" then
         scheduleRebuild()
-    elseif event=="PLAYER_TALENT_UPDATE" or event=="CHARACTER_POINTS_CHANGED" or event=="BANKFRAME_OPENED" or event=="BANKFRAME_CLOSED" or event=="PLAYER_LEVEL_UP" then scheduleRebuild()
+    elseif event=="PLAYER_TALENT_UPDATE" or event=="CHARACTER_POINTS_CHANGED" or event=="PLAYER_LEVEL_UP" then scheduleRebuild()
     elseif event=="PLAYER_ENTERING_WORLD" then scheduleRebuild() end
 end))

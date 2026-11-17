@@ -369,18 +369,20 @@ return function(ns,test)
   allowed:load();assert(allowed.button:GetAttribute("item1")=="item:2888","requirement equal to player level should be allowed")
   local leveling=mockClient(nil,{[0]={{itemID=2888,stackCount=1}}},{[0]={[1]={"Use: Eat to become Well Fed and gain 1 Strength for 15 min.","Requires Level 30"}}},{level=20})
   leveling:load();assert(leveling.button:GetAttribute("item1")==nil)
-  assert(leveling.eventFrame.events.PLAYER_LEVEL_UP and leveling.eventFrame.events.BANKFRAME_OPENED and leveling.eventFrame.events.BANKFRAME_CLOSED)
+  assert(leveling.eventFrame.events.PLAYER_LEVEL_UP and not leveling.eventFrame.events.BANKFRAME_OPENED and not leveling.eventFrame.events.BANKFRAME_CLOSED)
   leveling.level=30;leveling:fire("PLAYER_LEVEL_UP");leveling:flush()
   assert(leveling.button:GetAttribute("item1")=="item:2888","level-up should refresh newly eligible food")
  end)
 
- test("duplicate food stacks choose a carried smallest stack before bank",function()
+ test("duplicate food stacks choose smallest carried stack then bag and slot",function()
   local use="Use: Eat to become Well Fed and gain 1 Strength for 15 min."
-  local c,env=mockClient(nil,{[0]={{itemID=2888,stackCount=4}},[1]={{itemID=2888,stackCount=2}},[-1]={{itemID=2888,stackCount=1}}},{[0]={[1]={use},[2]={use}},[1]={[1]={use}},[-1]={[1]={use}}},{numBagSlots=1})
+  local c,env=mockClient(nil,{[0]={{itemID=2888,stackCount=4},{itemID=2888,stackCount=2}},[1]={{itemID=2888,stackCount=2}}},{[0]={[1]={use},[2]={use}},[1]={[1]={use}}},{numBagSlots=1})
   c:load();env.SlashCmdList.CLICKABLES("debug")
   local selected
   for _,line in ipairs(c.printed)do if line:find("2888",1,true) and line:find("selected",1,true)then selected=line end end
-  assert(selected and selected:find("2888 at 1 1",1,true),"smallest carried bag stack should be selected before the smaller bank stack: "..table.concat(c.printed," | "))
+  assert(selected and selected:find("2888 at 0 2",1,true),"equal smallest stacks should select the lower bag then slot: "..table.concat(c.printed," | "))
+  local bankOnly=mockClient(nil,{[-1]={{itemID=2888,stackCount=1}}},{[-1]={[1]={use}}})
+  bankOnly:load();assert(bankOnly.button:GetAttribute("item1")==nil,"bank items must not be scanned into the usable queue")
  end)
 
  test("food debug combines scan and selection into one line per stack",function()

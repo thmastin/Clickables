@@ -149,10 +149,13 @@ test("Forever food parses caster, healer, mana, critical, armor, and unknown sta
   local food=ns.FoodTooltip("Use: Eat to become Well Fed and gain 1 "..case[1].." for 15 min.")
   assert(food and food.stats[1] and food.stats[1].stat==case[2],"failed stat phrase: "..case[1])
  end
+ local healingSpells=ns.FoodTooltip("Use: Eat to become Well Fed and gain 3 healing spells for 15 min.")
+ assert(#healingSpells.stats==1 and healingSpells.stats[1].stat=="healing" and healingSpells.stats[1].bonus==3,"healing spells must map to healing once")
  local unknown=ns.FoodTooltip("Use: Eat to become Well Fed and gain 7 Nature Resistance for 15 min.")
  assert(unknown and #unknown.stats==0 and unknown.rawStatPhrase=="nature resistance")
  assert(ns.StatWeight("WARLOCK",nil,"spell_damage")>0)
  assert(ns.StatWeight("PRIEST",nil,"healing")>0 and ns.StatWeight("PRIEST",nil,"mp5")>0)
+ assert(ns.FoodItemIDs[787].bonus==6 and ns.FoodData(787,nil).stats[1].bonus==6,"Slitherskin Mackerel fallback should match its 6 AP tooltip")
  assert(ns.StatWeight("WARRIOR",nil,"healing")==0 and ns.StatWeight("WARRIOR",nil,"mp5")==0)
 end)
 test("required level parser reads English tooltip requirement",function()
@@ -238,12 +241,10 @@ test("stat score tie favors smaller total count then smaller slot stack",functio
  local smallerSlot={itemID=3,score=2,count=5,slotCount=2};local largerSlot={itemID=4,score=2,count=5,slotCount=4}
  assert(ns.BestFood({largerSlot,smallerSlot})==smallerSlot)
 end)
-test("duplicate item queue selection prefers bags, then smallest stack, then bag and slot",function()
- local duplicate={{itemID=8,bag=-1,slot=1,slotCount=1,isBank=true},{itemID=8,bag=1,slot=2,slotCount=3,isBank=false},{itemID=8,bag=0,slot=4,slotCount=2,isBank=false},{itemID=8,bag=0,slot=2,slotCount=2,isBank=false}}
+test("duplicate item queue selection prefers smallest carried stack, then bag and slot",function()
+ local duplicate={{itemID=8,bag=1,slot=2,slotCount=3},{itemID=8,bag=0,slot=4,slotCount=2},{itemID=8,bag=0,slot=2,slotCount=2}}
  local q=ns.DedupeQueue(duplicate,{[8]=8})
  assert(#q==1 and q[1].bag==0 and q[1].slot==2 and q[1].slotCount==2 and q[1].count==8)
- local bankOnly=ns.DedupeQueue({{itemID=9,bag=5,slot=1,slotCount=1,isBank=true},{itemID=9,bag=0,slot=1,slotCount=5}},{[9]=5})
- assert(bankOnly[1].bag==0,"carried bag location must beat a smaller bank stack")
 end)
 test("elixir aura uses spell ID or exact fallback",function()
  local elixir={aura="Greater Defense",auraSpellID=11349}

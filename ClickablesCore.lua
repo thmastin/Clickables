@@ -9,7 +9,7 @@ ns.OpenableItemIDs = {
     [5758]=true, [5759]=true, [5760]=true, [5761]=true,
 }
 ns.FoodItemIDs = {
-    [787]={name="Slitherskin Mackerel",stat="attack_power",bonus=1,xp=true},
+    [787]={name="Slitherskin Mackerel",stat="attack_power",bonus=6,xp=true},
     [2888]={name="Beer Basted Boar Ribs",stat="strength",bonus=1,xp=true},
     [6290]={name="Brilliant Smallfish",stat="attack_power",bonus=2,xp=true},
     [5477]={name="Strider Stew",stat="intellect",bonus=1,xp=true},
@@ -140,9 +140,6 @@ end
 function ns.DedupeQueue(items,countByID)
     local byID,out={},{}
     local function preferred(a,b)
-        local aBank=a.isBank;if aBank==nil then aBank=a.bag and (a.bag<0 or a.bag>(NUM_BAG_SLOTS or 0)) or false end
-        local bBank=b.isBank;if bBank==nil then bBank=b.bag and (b.bag<0 or b.bag>(NUM_BAG_SLOTS or 0)) or false end
-        if aBank~=bBank then return not aBank end
         local aStack=a.slotCount or 1;local bStack=b.slotCount or 1
         if aStack~=bStack then return aStack<bStack end
         local aBag=a.bag or math.huge;local bBag=b.bag or math.huge
@@ -196,10 +193,12 @@ function ns.FoodTooltip(use)
         {phrase="stamina",key="stamina"}, {phrase="intellect",key="intellect"},
         {phrase="spirit",key="spirit"}, {phrase="strength",key="strength"}, {phrase="agility",key="agility"},
     }
-    local found={}
+    local found,foundKeys={},{}
     for _,entry in ipairs(stats) do
-        local n=lower:match("([%d%.]+)%s+"..entry.phrase) or lower:match(entry.phrase.."%s+by%s+([%d%.]+)")
-        if n then found[#found+1]={stat=entry.key,bonus=tonumber(n) or 0,phrase=entry.phrase} end
+        if not foundKeys[entry.key] then
+            local n=lower:match("([%d%.]+)%s+"..entry.phrase) or lower:match(entry.phrase.."%s+by%s+([%d%.]+)")
+            if n then found[#found+1]={stat=entry.key,bonus=tonumber(n) or 0,phrase=entry.phrase};foundKeys[entry.key]=true end
+        end
     end
     local rawStatPhrase
     if #found==0 then rawStatPhrase=lower:match("gain%s+[%d%.]+%s+([^%.]+)%s+for%s+%d+%s+min") end
@@ -234,15 +233,13 @@ function ns.BestFood(items)
         local score=item.score or item.bonus or 0
         local bestScore=best and (best.score or best.bonus or 0) or nil
         local tier=item.tier or 1;local bestTier=best and (best.tier or 1) or nil
-        local itemBank=item.isBank or false;local bestBank=best and (best.isBank or false) or false
         local better=not best or tier<bestTier or (tier==bestTier and score>bestScore)
         if best and tier==bestTier and score==bestScore then
             local count=item.count or 1;local bestCount=best.count or 1
             local stack=item.slotCount or count;local bestStack=best.slotCount or bestCount
             if count<bestCount then better=true
             elseif count==bestCount then
-                if item.itemID==best.itemID and itemBank~=bestBank then better=not itemBank
-                elseif stack<bestStack then better=true
+                if stack<bestStack then better=true
                 elseif stack==bestStack then
                     better=(item.itemID or math.huge)<(best.itemID or math.huge)
                     if item.itemID==best.itemID then
