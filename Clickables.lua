@@ -172,7 +172,7 @@ local function itemData(bag,slot)
             foodAllowed=ns.FoodEligible(food,class,spec,DB.classFilterOverride)
             food.score=ns.ItemStatScore(food.stats,class,spec)
             local useful=DB.classFilterOverride or (food.score>0 and (#food.stats>1 or ns.ClassAllows(class,spec,food.stats[1].stat,false)))
-            food.tier=(useful or not food.xp) and 1 or 2
+            food.tier=useful and 1 or 2
             food.xpOffStat=food.tier==2
         end
         if errorState.debug then
@@ -185,6 +185,7 @@ local function itemData(bag,slot)
             local tier=food and (food.tier==2 and "tier 2 (xp, off-stat)" or "tier 1") or "tier n/a"
             local source=food and food.source or (use and "tooltip" or "itemID fallback")
             local detail=source=="tooltip" and (": "..((food and food.useText or use or ""):sub(1,80))) or ""
+            if food and food.rawStatPhrase then detail=detail..", unknown stat phrase: "..food.rawStatPhrase end
             debugLine("Clickables food "..scoreText(ns.GetItemName(info.itemID) or tostring(info.itemID),food and food.stats,currentClass,currentSpec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..tier..", "..reason..", source "..source..detail)
         end
     end

@@ -2,6 +2,13 @@
 
 All notable changes to Clickables are documented here.
 
+## [1.2.4] - 2026-11-16
+
+### Fixed
+- Parse caster, healer, mana regeneration, critical, and armor stats from Well Fed food tooltips and apply class/spec weights.
+- Keep useful-stat food in tier 1, allow unknown-stat Well Fed food as a tier 2 fallback, and include unknown stat phrases in debug output.
+- Prefer Rainbow Fin Albacore for warlocks and healing food for priests while preserving Attack Power food ranking for warriors.
+
 ## [1.2.3] - 2026-11-16
 
 ### Changed

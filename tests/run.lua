@@ -139,6 +139,22 @@ test("Forever food Use tooltips parse Strength and Attack Power",function()
  assert(fish and fish.stats[1].stat=="attack_power" and fish.bonus==2)
  assert(ns.FoodItemIDs[2888].stat=="strength" and ns.FoodItemIDs[6290].stat=="attack_power")
 end)
+test("Forever food parses caster, healer, mana, critical, armor, and unknown stats",function()
+ local cases={
+  {"Spell Damage","spell_damage"},{"healing spells","healing"},{"Healing","healing"},
+  {"Spell Power","spell_damage"},{"mana every 5 sec","mp5"},{"mp5","mp5"},
+  {"Spell Critical","spell_critical"},{"Armor","armor"},
+ }
+ for _,case in ipairs(cases)do
+  local food=ns.FoodTooltip("Use: Eat to become Well Fed and gain 1 "..case[1].." for 15 min.")
+  assert(food and food.stats[1] and food.stats[1].stat==case[2],"failed stat phrase: "..case[1])
+ end
+ local unknown=ns.FoodTooltip("Use: Eat to become Well Fed and gain 7 Nature Resistance for 15 min.")
+ assert(unknown and #unknown.stats==0 and unknown.rawStatPhrase=="nature resistance")
+ assert(ns.StatWeight("WARLOCK",nil,"spell_damage")>0)
+ assert(ns.StatWeight("PRIEST",nil,"healing")>0 and ns.StatWeight("PRIEST",nil,"mp5")>0)
+ assert(ns.StatWeight("WARRIOR",nil,"healing")==0 and ns.StatWeight("WARRIOR",nil,"mp5")==0)
+end)
 test("Forever XP food preserves XP flag and filters plain off-stat food",function()
  local xp=ns.FoodTooltip("If you spend at least 10 sec eating, you will become well fed and gain 2 Attack Power for 15 min. Additionally, Experience Gained From Kills Is Increased By 5%.")
  local plain=ns.FoodTooltip("If you spend at least 10 seconds eating, you will become well fed and gain 2 Attack Power for 15 min.")
@@ -166,6 +182,12 @@ test("Attack Power food is limited to melee and hunter",function()
  assert(ns.FoodEligible(ap,"SHAMAN","melee",false))
  assert(not ns.FoodEligible(ap,"SHAMAN","caster",false))
  assert(not ns.FoodEligible(ap,"PRIEST",nil,false))
+end)
+test("caster damage and healing stats filter by class",function()
+ local spell=ns.FoodTooltip("Use: Eat to become Well Fed and gain 1 Spell Damage for 15 min.")
+ local healing=ns.FoodTooltip("Use: Eat to become Well Fed and gain 1 Healing for 15 min.")
+ assert(ns.FoodEligible(spell,"WARLOCK",nil,false) and not ns.FoodEligible(spell,"WARRIOR",nil,false))
+ assert(ns.FoodEligible(healing,"PRIEST",nil,false) and not ns.FoodEligible(healing,"WARRIOR",nil,false))
 end)
 test("zero talent points leave hybrid spec unknown",function()
  assert(ns.DominantTalentTab({0,0,0})==nil)

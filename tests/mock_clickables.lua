@@ -327,6 +327,30 @@ return function(ns,test)
   assert(env.ClickablesDB~=nil)
  end)
 
+ test("Rainbow Fin Albacore beats melee food for warlock; warrior keeps Mackerel",function()
+  local albacore="Use: Eat to become Well Fed and gain 1 Spell Damage for 15 min. Additionally, experience gained from kills is increased by 5%."
+  local mackerel="Use: Eat to become Well Fed and gain 1 Attack Power for 15 min. Additionally, experience gained from kills is increased by 5%."
+  local warlock,warlockEnv=mockClient(nil,{[0]={{itemID=5095,stackCount=1},{itemID=787,stackCount=1},{itemID=6290,stackCount=1}}},{[0]={[1]={albacore}}},{className="WARLOCK",localizedClass="Warlock"})
+  warlock:load();assert(warlock.button:GetAttribute("item1")=="item:5095","Spell Damage Albacore should be useful tier 1 over Mackerel and Smallfish")
+  warlockEnv.SlashCmdList.CLICKABLES("debug")
+  local tierOne=false;for _,line in ipairs(warlock.printed)do if line:find("5095",1,true) and line:find("tier 1",1,true)then tierOne=true end end
+  assert(tierOne,"Albacore must be explicitly ranked tier 1")
+  local warrior=mockClient(nil,{[0]={{itemID=5095,stackCount=1},{itemID=787,stackCount=1}}},{[0]={[1]={albacore},[2]={mackerel}}},{className="WARRIOR",localizedClass="Warrior"})
+  warrior:load();assert(warrior.button:GetAttribute("item1")=="item:787","Warrior should prefer Attack Power Mackerel")
+ end)
+
+ test("priest values healing food and unknown Well Fed food stays tier 2 with raw phrase",function()
+  local healing="Use: Eat to become Well Fed and gain 1 Healing for 15 min."
+  local priest=mockClient(nil,{[0]={{itemID=17197,stackCount=1},{itemID=5527,stackCount=1}}},{[0]={[1]={"Use: Eat to become Well Fed and gain 2 Strength for 15 min."},[2]={healing}}},{className="PRIEST",localizedClass="Priest"})
+  priest:load();assert(priest.button:GetAttribute("item1")=="item:5527","Priest should choose healing food")
+  local unknown,env=mockClient(nil,{[0]={{itemID=77777,stackCount=1}}},{[0]={[1]={"Use: Eat to become Well Fed and gain 7 Nature Resistance for 15 min."}}},{className="WARLOCK",localizedClass="Warlock"})
+  unknown:load();assert(unknown.button:GetAttribute("item1")=="item:77777","unknown Well Fed stat should remain eligible")
+  env.SlashCmdList.CLICKABLES("debug")
+  local found=false
+  for _,line in ipairs(unknown.printed)do if line:find("tier 2",1,true) and line:find("unknown stat phrase: nature resistance",1,true)then found=true end end
+  assert(found,"unknown tier 2 Well Fed food should log its raw stat phrase")
+ end)
+
  test("debug toggle dumps immediately, identical scans stay quiet, changed scans dump again",function()
   local use="Use: If you spend at least 10 sec eating, you will become well fed and gain 1 Strength for 15 min. Additionally, experience gained from kills is increased by 5%."
   local c,env=mockClient(nil,{[0]={{itemID=2888,stackCount=1},{itemID=954,stackCount=1},{itemID=2454,stackCount=1}}},{[0]={[1]={use}}});c:load()
@@ -349,7 +373,7 @@ return function(ns,test)
   assert(c.button:GetAttribute("item1")==nil,"non-XP food with a useless stat should stay filtered")
   env.SlashCmdList.CLICKABLES("debug")
   local found=false
-  for _,line in ipairs(c.printed)do if line:find("tier 1, class filter",1,true)then found=true end end
+  for _,line in ipairs(c.printed)do if line:find("tier 2",1,true) and line:find("class filter",1,true)then found=true end end
   assert(found,"full debug dump should include class-filter skip reason and food tier")
  end)
 
