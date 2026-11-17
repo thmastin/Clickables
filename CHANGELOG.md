@@ -8,6 +8,8 @@ All notable changes to Clickables are documented here.
 - Parse caster, healer, mana regeneration, critical, and armor stats from Well Fed food tooltips and apply class/spec weights.
 - Keep useful-stat food in tier 1, allow unknown-stat Well Fed food as a tier 2 fallback, and include unknown stat phrases in debug output.
 - Prefer Rainbow Fin Albacore for warlocks and healing food for priests while preserving Attack Power food ranking for warriors.
+- Skip food, elixirs, and scrolls above the player's level; rank duplicate stacks from bags ahead of bank stacks and prefer smaller stacks deterministically.
+- Tune healer and caster food weights by class/spec and report each food stack once per debug scan, with its selection status on the same line.
 
 ## [1.2.3] - 2026-11-16
 

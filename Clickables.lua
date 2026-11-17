@@ -5,6 +5,7 @@ local getInfo=(C_Item and C_Item.GetItemInfo) or GetItemInfo
 local errorState=ns.NewErrorState()
 local questLogState=ns.NewQuestLogState()
 local scanDebugLines,lastPrintedQueueSnapshot={},nil
+local foodDebugRecords={}
 local forceDebugDump=false
 local function queueSnapshot(items)
     local parts={}
@@ -12,7 +13,7 @@ local function queueSnapshot(items)
     return table.concat(parts,"|")
 end
 local function debugLine(line)
-    if errorState.debug then scanDebugLines[#scanDebugLines+1]=line end
+    if errorState.debug then scanDebugLines[#scanDebugLines+1]=line;return #scanDebugLines end
 end
 local function safe(label,fn) return function(...)
     local args={...}
@@ -38,9 +39,10 @@ local function getText(itemID,bag,slot)
     if cached then
         local locked=false
         for i=1,scanTooltip:NumLines() do local line=_G["ClickablesScanTooltipTextLeft"..i];local s=line and line:GetText();if s and s:find(ITEM_LOCKED or "Locked",1,true) then locked=true end end
-        scanTooltip:Hide();return cached.open,cached.quest,locked,cached.use
+        scanTooltip:Hide();return cached.open,cached.quest,locked,cached.use,cached.requiredLevel
     end
     local open,quest,locked=false,false,false
+    local requiredLevel
     local useParts,inUse={},false
     local openText=ITEM_OPENABLE or "Right Click to Open"; local questText=ITEM_STARTS_QUEST or "This Item Begins a Quest"
     for i=1,scanTooltip:NumLines() do
@@ -57,6 +59,7 @@ local function getText(itemID,bag,slot)
             if s:find(openText,1,true) or s:find("Right Click to Open",1,true) then open=true end
             if s:find(questText,1,true) or s:find("This Item Begins a Quest",1,true) then quest=true end
             if s:find(ITEM_LOCKED or "Locked",1,true) then locked=true end
+            requiredLevel=requiredLevel or ns.RequiredLevel(s)
         end
     end
     local lineCount=scanTooltip:NumLines()
@@ -64,8 +67,8 @@ local function getText(itemID,bag,slot)
     local classID
     if getInstant then classID=select(6,getInstant(itemID)) end
     if type(classID)~="number" and getInfo then classID=select(12,getInfo(itemID)) end
-    if lineCount>0 and (use~=nil or classID~=0) then itemProperties[itemID]={open=open,quest=quest,use=use} end
-    return open,quest,locked,use
+    if lineCount>0 and (use~=nil or classID~=0 or requiredLevel~=nil) then itemProperties[itemID]={open=open,quest=quest,use=use,requiredLevel=requiredLevel} end
+    return open,quest,locked,use,requiredLevel
 end
 local function playerSpec()
     if not GetTalentTabInfo then return nil end
@@ -133,7 +136,7 @@ local function itemData(bag,slot)
     local questInfo=ns.GetContainerItemQuestInfo(bag,slot)
     if DB.ignored and DB.ignored[info.itemID] then return nil end
     local classID=itemClassID(info.itemID)
-    local open,quest,locked,use=getText(info.itemID,bag,slot)
+    local open,quest,locked,use,requiredLevel=getText(info.itemID,bag,slot)
     local consumable=classID==nil or classID==CONSUMABLE_CLASS_ID
     local itemInfo=ns.GetItemInfo(info.itemID)
     local loot=info.hasLoot or info.isLootable or (itemInfo and (itemInfo.hasLoot or itemInfo.isLootable))
@@ -164,6 +167,18 @@ local function itemData(bag,slot)
         local expected=sd.name:gsub(" I$","")
         if knownName~=expected then sd=nil end
     end
+    local playerLevel=UnitLevel and UnitLevel("player")
+    if requiredLevel and playerLevel and requiredLevel>playerLevel and (foodCandidate or sd or ed) then
+        local reason="level "..requiredLevel.." required"
+        if errorState.debug then
+            if foodCandidate then
+                local index=debugLine("Clickables food "..(knownName or ns.GetItemName(info.itemID) or tostring(info.itemID)).." ("..info.itemID.." at "..bagName(bag,slot).."): tier n/a, "..reason)
+                foodDebugRecords[#foodDebugRecords+1]={lineIndex=index}
+            elseif sd then debugLine("Clickables scroll "..(knownName or sd.name).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason)
+            elseif ed then debugLine("Clickables elixir "..(knownName or ed.name).." ("..info.itemID.." at "..bagName(bag,slot).."): "..reason) end
+        end
+        return nil
+    end
     local foodActive,foodAllowed=false,true
     if foodCandidate then
         local class=currentClass;local spec=currentSpec
@@ -186,7 +201,8 @@ local function itemData(bag,slot)
             local source=food and food.source or (use and "tooltip" or "itemID fallback")
             local detail=source=="tooltip" and (": "..((food and food.useText or use or ""):sub(1,80))) or ""
             if food and food.rawStatPhrase then detail=detail..", unknown stat phrase: "..food.rawStatPhrase end
-            debugLine("Clickables food "..scoreText(ns.GetItemName(info.itemID) or tostring(info.itemID),food and food.stats,currentClass,currentSpec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..tier..", "..reason..", source "..source..detail)
+            local lineIndex=debugLine("Clickables food "..scoreText(ns.GetItemName(info.itemID) or tostring(info.itemID),food and food.stats,currentClass,currentSpec).." ("..info.itemID.." at "..bagName(bag,slot).."): "..tier..", "..reason..", source "..source..detail)
+            foodDebugRecords[#foodDebugRecords+1]={food=data,lineIndex=lineIndex,eligible=food~=nil and foodAllowed and not foodActive and DB.food}
         end
     end
     if food and DB.food and not foodActive and foodAllowed then
@@ -257,6 +273,7 @@ end
 local function rebuild()
     if InCombatLockdown() then return end
     scanDebugLines={}
+    foodDebugRecords={}
     currentClass=select(2,UnitClass("player"));currentSpec=playerSpec();activeAuras=auras();local scrolls={};local bagTotals={}
     for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do
         local bi=ns.GetContainerItemInfo(bag,slot)
@@ -267,24 +284,29 @@ local function rebuild()
     end end
     carriedScrollRanks=ns.BestCarriedRanks(scrolls)
     local fresh={}
-    for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do local d=itemData(bag,slot); if d then fresh[#fresh+1]=d end end end
+    local scanBags={};for bag=0,NUM_BAG_SLOTS do scanBags[#scanBags+1]=bag end
+    scanBags[#scanBags+1]=-1;for bag=5,11 do scanBags[#scanBags+1]=bag end
+    for _,bag in ipairs(scanBags) do for slot=1,ns.GetContainerNumSlots(bag) do
+        local info=ns.GetContainerItemInfo(bag,slot)
+        local isBank=bag<0 or bag>NUM_BAG_SLOTS
+        if info and info.itemID and (not isBank or bagTotals[info.itemID]) then
+            local d=itemData(bag,slot);if d then d.isBank=isBank;fresh[#fresh+1]=d end
+        end
+    end end
     for _,item in ipairs(fresh) do
         item.count=bagTotals[item.itemID] or 0
     end
     local foods={};for i=#fresh,1,-1 do if fresh[i].kind=="food" then foods[#foods+1]=table.remove(fresh,i) end end
     local best=ns.BestFood(foods)
     if best then fresh[#fresh+1]=best end
+    for _,record in ipairs(foodDebugRecords) do
+        if record.lineIndex and record.eligible then
+            scanDebugLines[record.lineIndex]=scanDebugLines[record.lineIndex]..(record.food==best and ", selected" or ", not best eligible food")
+        end
+    end
     local unique=ns.DedupeQueue(fresh,bagTotals);ns.SortQueue(unique,DB.priority)
     queue=unique
     if errorState.debug then
-        for _,food in ipairs(foods) do
-            local status=food==best and "selected" or "not best eligible food"
-            local tier=food.tier==2 and "tier 2 (xp, off-stat)" or "tier 1"
-            debugLine("Clickables food "..(ns.GetItemName(food.itemID) or tostring(food.itemID)).." ("..food.itemID.." at "..bagName(food.bag,food.slot).."): "..tier..", "..status)
-        end
-        local tied=false
-        if best then for _,food in ipairs(foods) do if food~=best and food.tier==best.tier and food.score==best.score then tied=true;break end end end
-        if tied then debugLine("Clickables food "..(best.tier==2 and "tier 2 (xp, off-stat)" or "tier 1").." tie -> smaller stack (total "..best.count..")") end
         local snapshot=queueSnapshot(unique)
         if forceDebugDump or snapshot~=lastPrintedQueueSnapshot then
             for _,line in ipairs(scanDebugLines) do print(line) end
@@ -450,7 +472,7 @@ end
 local slash=safe("slash command",slashImpl)
 SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
 local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED");events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-events:RegisterEvent("UNIT_AURA");events:RegisterEvent("QUEST_LOG_UPDATE");events:RegisterEvent("QUEST_REMOVED")
+events:RegisterEvent("UNIT_AURA");events:RegisterEvent("QUEST_LOG_UPDATE");events:RegisterEvent("QUEST_REMOVED");events:RegisterEvent("BANKFRAME_OPENED");events:RegisterEvent("BANKFRAME_CLOSED");events:RegisterEvent("PLAYER_LEVEL_UP")
 if C_EventUtils and C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("PLAYER_TALENT_UPDATE") then events:RegisterEvent("PLAYER_TALENT_UPDATE") end
 events:RegisterEvent("CHARACTER_POINTS_CHANGED")
 events:SetScript("OnEvent",safe("event handler",function(_,event,name)
@@ -464,6 +486,6 @@ events:SetScript("OnEvent",safe("event handler",function(_,event,name)
     elseif event=="QUEST_LOG_UPDATE" or event=="QUEST_ACCEPTED" or event=="QUEST_REMOVED" then ns.MarkQuestLogReady(questLogState);scheduleRebuild()
     elseif event=="BAG_UPDATE_DELAYED" then
         scheduleRebuild()
-    elseif event=="PLAYER_TALENT_UPDATE" or event=="CHARACTER_POINTS_CHANGED" then scheduleRebuild()
+    elseif event=="PLAYER_TALENT_UPDATE" or event=="CHARACTER_POINTS_CHANGED" or event=="BANKFRAME_OPENED" or event=="BANKFRAME_CLOSED" or event=="PLAYER_LEVEL_UP" then scheduleRebuild()
     elseif event=="PLAYER_ENTERING_WORLD" then scheduleRebuild() end
 end))

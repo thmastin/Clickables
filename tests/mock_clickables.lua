@@ -2,13 +2,13 @@ return function(ns,test)
  local function mockClient(saved,bags,tooltipBySlot,config)
   config=config or {}
   local timers,frames={},{}
-  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior",classIDs=config.classIDs or {}}
+  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,level=config.level or 60,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior",classIDs=config.classIDs or {}}
   local function itemClass(id)if config.unknownClassIDs and config.unknownClassIDs[id] then return nil end;return client.classIDs[id] or 0 end
   client.names={}
   for itemID,data in pairs(ns.ScrollItemIDs)do client.names[itemID]=data.name:gsub(" I$","")end
   for itemID,data in pairs(ns.ElixirItemIDs)do client.names[itemID]=data.name end
   local env=setmetatable({},{__index=_G})
-  env._G=env;env.unpack=unpack;env.ClickablesDB=saved;env.NUM_BAG_SLOTS=0
+  env._G=env;env.unpack=unpack;env.ClickablesDB=saved;env.NUM_BAG_SLOTS=config.numBagSlots or 0
   env.UIParent={GetWidth=function()return 800 end,GetHeight=function()return 600 end}
   env.GetTime=function()return client.now end
   env.GetCVar=function()return client.keyDown and "1" or "0" end
@@ -44,6 +44,7 @@ return function(ns,test)
   env.C_QuestLog={IsOnQuest=function(questID)return client.onQuest[questID] or false end,IsQuestFlaggedCompleted=function(questID)return client.completed[questID] or false end}
   env.GetTalentTabInfo=function(tab)return nil,nil,client.talentPoints[tab] or 0 end
   env.UnitClass=function()return client.localizedClass,client.className end
+  env.UnitLevel=function()return client.level end
   env.C_Item.GetItemIconByID=function()return 134400 end
   env.ITEM_OPENABLE="Right Click to Open";env.ITEM_STARTS_QUEST="This Item Begins a Quest";env.ITEM_LOCKED="Locked"
   env.SlashCmdList={};env.InterfaceOptions_AddCategory=function()end
@@ -349,6 +350,47 @@ return function(ns,test)
   local found=false
   for _,line in ipairs(unknown.printed)do if line:find("tier 2",1,true) and line:find("unknown stat phrase: nature resistance",1,true)then found=true end end
   assert(found,"unknown tier 2 Well Fed food should log its raw stat phrase")
+ end)
+
+ test("food elixir and scroll above player level are skipped with debug reason",function()
+  local cases={
+   {id=2888,name="food",use="Use: Eat to become Well Fed and gain 1 Strength for 15 min."},
+   {id=2454,name="elixir",use="Use: Increases Strength by 5."},
+   {id=954,name="scroll",use="Use: Increases Strength by 5."},
+  }
+  for _,case in ipairs(cases)do
+   local c,env=mockClient(nil,{[0]={{itemID=case.id,stackCount=1}}},{[0]={[1]={case.use,"Requires Level 50"}}},{className="WARRIOR",localizedClass="Warrior",level=20})
+   c:load();assert(c.button:GetAttribute("item1")==nil,case.name.." above-level requirement must be skipped")
+   env.SlashCmdList.CLICKABLES("debug")
+   local found=false;for _,line in ipairs(c.printed)do if line:find("level 50 required",1,true) and line:find("Clickables "..case.name,1,true)then found=true end end
+   assert(found,case.name.." debug should state level 50 required")
+  end
+  local allowed=mockClient(nil,{[0]={{itemID=2888,stackCount=1}}},{[0]={[1]={"Use: Eat to become Well Fed and gain 1 Strength for 15 min.","Requires Level 20"}}},{level=20})
+  allowed:load();assert(allowed.button:GetAttribute("item1")=="item:2888","requirement equal to player level should be allowed")
+  local leveling=mockClient(nil,{[0]={{itemID=2888,stackCount=1}}},{[0]={[1]={"Use: Eat to become Well Fed and gain 1 Strength for 15 min.","Requires Level 30"}}},{level=20})
+  leveling:load();assert(leveling.button:GetAttribute("item1")==nil)
+  assert(leveling.eventFrame.events.PLAYER_LEVEL_UP and leveling.eventFrame.events.BANKFRAME_OPENED and leveling.eventFrame.events.BANKFRAME_CLOSED)
+  leveling.level=30;leveling:fire("PLAYER_LEVEL_UP");leveling:flush()
+  assert(leveling.button:GetAttribute("item1")=="item:2888","level-up should refresh newly eligible food")
+ end)
+
+ test("duplicate food stacks choose a carried smallest stack before bank",function()
+  local use="Use: Eat to become Well Fed and gain 1 Strength for 15 min."
+  local c,env=mockClient(nil,{[0]={{itemID=2888,stackCount=4}},[1]={{itemID=2888,stackCount=2}},[-1]={{itemID=2888,stackCount=1}}},{[0]={[1]={use},[2]={use}},[1]={[1]={use}},[-1]={[1]={use}}},{numBagSlots=1})
+  c:load();env.SlashCmdList.CLICKABLES("debug")
+  local selected
+  for _,line in ipairs(c.printed)do if line:find("2888",1,true) and line:find("selected",1,true)then selected=line end end
+  assert(selected and selected:find("2888 at 1 1",1,true),"smallest carried bag stack should be selected before the smaller bank stack: "..table.concat(c.printed," | "))
+ end)
+
+ test("food debug combines scan and selection into one line per stack",function()
+  local use="Use: Eat to become Well Fed and gain 1 Strength for 15 min."
+  local c,env=mockClient(nil,{[0]={{itemID=2888,stackCount=1},{itemID=5477,stackCount=1}}},{[0]={[1]={use},[2]={"Use: Eat to become Well Fed and gain 1 Intellect for 15 min."}}},{className="MAGE",localizedClass="Mage"})
+  c:load();env.SlashCmdList.CLICKABLES("debug")
+  local lines={};for _,line in ipairs(c.printed)do if line:find("Clickables food",1,true)then lines[#lines+1]=line end end
+  assert(#lines==2,"each food stack should have exactly one debug line")
+  local selected=0;for _,line in ipairs(lines)do if line:find("selected",1,true)then selected=selected+1 end end
+  assert(selected==1,"the selected result should be included on its scan line")
  end)
 
  test("debug toggle dumps immediately, identical scans stay quiet, changed scans dump again",function()
