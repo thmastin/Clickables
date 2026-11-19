@@ -124,18 +124,56 @@ return function(ns,test)
   return client,env
  end
 
- test("real Clickables button click phases toggle ignore once without right action",function()
+ test("clickable key binding uses once for either CVar setting and mouse click uses once",function()
   for _,keyDown in ipairs({false,true})do
-   local c,env=mockClient(nil,{[0]={{itemID=5523,stackCount=1},{itemID=5524,stackCount=1}}});c:load()
+   local c=mockClient(nil,{[0]={{itemID=5523,stackCount=1},{itemID=5524,stackCount=1}}});c:load()
    assert(table.concat(c.button.clicks,",")=="AnyUp,AnyDown")
    assert(c.button:GetAttribute("type1")=="item"and c.button:GetAttribute("item1")=="item:5523", "button item="..tostring(c.button:GetAttribute("item1")).." errors="..table.concat(c.printed," | "))
    assert(c.button:GetAttribute("type")==nil and c.button:GetAttribute("type2")==nil and c.button:GetAttribute("item2")==nil)
-   c.alt=true
    c.keyDown=keyDown
-   c.button.scripts.PreClick(c.button,"RightButton",false)
-   c.button.scripts.PreClick(c.button,"RightButton",true)
+   local keyUses=0
+   for _,down in ipairs({true,false})do
+    local phase=down and "AnyDown" or "AnyUp"
+    local registered=false;for _,click in ipairs(c.button.clicks)do if click==phase then registered=true end end
+    if registered and down==keyDown and c.button:GetAttribute("type1")=="item" then keyUses=keyUses+1 end
+   end
+   assert(keyUses==1,"a CLICK binding press must dispatch its configured key phase once")
+   local mouseUses=0
+   for _,down in ipairs({true,false})do
+    local phase=down and "AnyDown" or "AnyUp"
+    local registered=false;for _,click in ipairs(c.button.clicks)do if click==phase then registered=true end end
+    if registered and not down and c.button:GetAttribute("type1")=="item" then mouseUses=mouseUses+1 end
+   end
+   assert(mouseUses==1,"a mouse click must use once on release")
+  end
+ end)
+ test("ignore binding ignores only shown item once and never uses it",function()
+  for _,keyDown in ipairs({false,true})do
+   local c,env=mockClient(nil,{[0]={{itemID=5523,stackCount=1},{itemID=5524,stackCount=1}}});c:load();c.keyDown=keyDown
+   local binding=env.ClickablesIgnoreButton
+   assert(binding and table.concat(binding.clicks,",")=="AnyUp,AnyDown")
+   for _,down in ipairs({true,false})do binding.scripts.PreClick(binding,"LeftButton",down) end
    local ignoredCount=0;for _,id in ipairs({5523,5524})do if env.ClickablesDB.ignored[id]then ignoredCount=ignoredCount+1 end end
-   assert(ignoredCount==1 and env.ClickablesDB.ignored[5523]and not env.ClickablesDB.ignored[5524],"one physical click must ignore only the original queue item")
+   assert(ignoredCount==1 and env.ClickablesDB.ignored[5523]and not env.ClickablesDB.ignored[5524],"ignore binding must ignore only the displayed item once")
+   assert(c.button:GetAttribute("item1")=="item:5524","ignore binding should advance the displayed item")
+   assert(binding:GetAttribute("type1")==nil and binding:GetAttribute("type")==nil,"ignore target must not have a secure item action")
+  end
+ end)
+ test("ignore binding does nothing in combat",function()
+  local c,env=mockClient(nil,{[0]={{itemID=5523,stackCount=1},{itemID=5524,stackCount=1}}});c:load()
+  c.combat=true;local binding=env.ClickablesIgnoreButton
+  binding.scripts.PreClick(binding,"LeftButton",true);binding.scripts.PreClick(binding,"LeftButton",false)
+  assert(not env.ClickablesDB.ignored[5523] and not env.ClickablesDB.ignored[5524])
+ end)
+ test("Alt right-click keeps toggling only the shown item once",function()
+  for _,keyDown in ipairs({false,true})do
+   local c,env=mockClient(nil,{[0]={{itemID=5523,stackCount=1},{itemID=5524,stackCount=1}}});c:load()
+   c.alt=true;c.keyDown=keyDown
+   for _,down in ipairs({true,false})do c.button.scripts.PreClick(c.button,"RightButton",down) end
+   assert(env.ClickablesDB.ignored[5523] and not env.ClickablesDB.ignored[5524],"Alt+right-click must still ignore the displayed item once")
+   c.combat=true
+   for _,down in ipairs({true,false})do c.button.scripts.PreClick(c.button,"RightButton",down) end
+   assert(env.ClickablesDB.ignored[5523] and not env.ClickablesDB.ignored[5524],"Alt+right-click must remain blocked in combat")
   end
  end)
 

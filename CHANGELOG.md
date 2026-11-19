@@ -2,6 +2,14 @@
 
 All notable changes to Clickables are documented here.
 
+## [1.2.5] - 2026-11-18
+
+### Added
+- Add an **Ignore current Clickable** key binding for keyboard and controller binding menus; it ignores the displayed item once and is unavailable in combat.
+
+### Fixed
+- Make **Use next Clickable** use an item once per binding press with either `ActionButtonUseKeyDown` setting, while retaining one use per mouse click.
+
 ## [1.2.4] - 2026-11-16
 
 ### Fixed
