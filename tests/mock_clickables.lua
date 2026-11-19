@@ -165,6 +165,17 @@ return function(ns,test)
   binding.scripts.PreClick(binding,"LeftButton",true);binding.scripts.PreClick(binding,"LeftButton",false)
   assert(not env.ClickablesDB.ignored[5523] and not env.ClickablesDB.ignored[5524])
  end)
+ test("Alt right-click keeps toggling only the shown item once",function()
+  for _,keyDown in ipairs({false,true})do
+   local c,env=mockClient(nil,{[0]={{itemID=5523,stackCount=1},{itemID=5524,stackCount=1}}});c:load()
+   c.alt=true;c.keyDown=keyDown
+   for _,down in ipairs({true,false})do c.button.scripts.PreClick(c.button,"RightButton",down) end
+   assert(env.ClickablesDB.ignored[5523] and not env.ClickablesDB.ignored[5524],"Alt+right-click must still ignore the displayed item once")
+   c.combat=true
+   for _,down in ipairs({true,false})do c.button.scripts.PreClick(c.button,"RightButton",down) end
+   assert(env.ClickablesDB.ignored[5523] and not env.ClickablesDB.ignored[5524],"Alt+right-click must remain blocked in combat")
+  end
+ end)
 
  test("priority setting controls mixed-kind rebuild order",function()
   local c=mockClient({priority={"food","quest","openable","elixir","scroll"}},
