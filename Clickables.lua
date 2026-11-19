@@ -21,8 +21,12 @@ local function safe(label,fn) return function(...)
 end end
 BINDING_HEADER_CLICKABLES = "Clickables"
 _G["BINDING_NAME_CLICK ClickablesButton:LeftButton"] = "Use next Clickable"
+_G["BINDING_NAME_CLICK ClickablesIgnoreButton:LeftButton"] = "Ignore current Clickable"
 local frame = CreateFrame("Button", "ClickablesButton", UIParent, "SecureActionButtonTemplate,BackdropTemplate")
+-- Forever's secure action uses the CVar-selected phase for keys, and release for mouse clicks.
 frame:SetSize(48,48); frame:RegisterForClicks("AnyUp", "AnyDown"); frame:SetAttribute("type1", "item")
+local ignoreBinding = CreateFrame("Button", "ClickablesIgnoreButton", UIParent)
+ignoreBinding:RegisterForClicks("AnyUp", "AnyDown")
 frame:SetMovable(true); frame:EnableMouse(true); frame:RegisterForDrag("LeftButton")
 frame:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"}); frame:SetBackdropColor(0.04,0.04,0.04,0.75)
 local icon=frame:CreateTexture(nil,"ARTWORK"); icon:SetAllPoints(); frame.icon=icon
@@ -330,19 +334,24 @@ local function position()
     frame:ClearAllPoints(); frame:SetPoint(DB.point or "CENTER",UIParent,DB.point or "CENTER",DB.x or 0,DB.y or -120); frame:SetScale(DB.scale or 1)
 end
 local refreshIgnoredList
+local function ignoreCurrent()
+    if InCombatLockdown() or not queue[1] then return end
+    local current=queue[1]
+    local ignored=ns.ToggleIgnore(DB.ignored,current.itemID)
+    local itemName=ns.GetItemName(current.itemID)
+    local itemLink=current.link or (itemName and ("|Hitem:"..current.itemID.."|h["..itemName.."]|h")) or ("item:"..current.itemID)
+    if ignored then print("Clickables: ignored "..itemLink) else print("Clickables: no longer ignoring "..itemLink) end
+    rebuild()
+    if refreshIgnoredList then refreshIgnoredList() end
+end
+ignoreBinding:SetScript("PreClick",safe("ignore binding",function(_,_,down)
+    if ns.ShouldHandleClickPhase(down,GetCVarBool("ActionButtonUseKeyDown")) then ignoreCurrent() end
+end))
 frame:SetScript("OnDragStart",safe("drag start",function(self) if not DB.locked and not InCombatLockdown() then self:StartMoving() end end))
 frame:SetScript("OnDragStop",safe("drag stop",function(self) self:StopMovingOrSizing(); local p,_,_,x,y=self:GetPoint(); DB.point=p;DB.x=x;DB.y=y end))
 frame:SetScript("PreClick",safe("PreClick",function(self,button,down)
     if not ns.ShouldHandleClickPhase(down,GetCVarBool("ActionButtonUseKeyDown")) then return end
-    if button=="RightButton" and IsAltKeyDown() and queue[1] and not InCombatLockdown() then
-        local current=queue[1]
-        local ignored=ns.ToggleIgnore(DB.ignored,current.itemID)
-        local itemName=ns.GetItemName(current.itemID)
-        local itemLink=current.link or (itemName and ("|Hitem:"..current.itemID.."|h["..itemName.."]|h")) or ("item:"..current.itemID)
-        if ignored then print("Clickables: ignored "..itemLink) else print("Clickables: no longer ignoring "..itemLink) end
-        rebuild()
-        if refreshIgnoredList then refreshIgnoredList() end
-    end
+    if button=="RightButton" and IsAltKeyDown() and ns.ShouldHandleClickPhase(down,GetCVarBool("ActionButtonUseKeyDown")) then ignoreCurrent() end
 end))
 frame:SetScript("OnEnter",safe("tooltip",function(self)
     GameTooltip:SetOwner(self,"ANCHOR_RIGHT"); local d=queue[1]

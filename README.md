@@ -2,6 +2,13 @@
 
 Clickables provides one secure button for the next quest starter, openable, elixir, scroll, or buff food in your bags. It never uses an item automatically; click the button or use the **Use next Clickable** key binding.
 
+## Keybindings
+
+- **Use next Clickable** uses the item currently shown.
+- **Ignore current Clickable** adds the item currently shown to the ignore list. It is blocked in combat, like Alt+right-click.
+
+Both bindings appear under **Clickables** in the game’s key binding menu. Controller users can bind them through the gamepad bindings menu or ConsolePort.
+
 ## Install
 
 Copy the `Clickables` folder into your Forever client's `Interface\AddOns` directory and enable it in the AddOns list.
