@@ -77,13 +77,47 @@ end
 local function playerSpec()
     if not GetTalentTabInfo then return nil end
     local points={}
-    for tab=1,3 do local _,_,spent=GetTalentTabInfo(tab);points[tab]=spent end
+    -- Forever's vanilla FrameXML API order is name, iconTexture, pointsSpent, background.
+    for tab=1,3 do local _,_,spent=GetTalentTabInfo(tab);points[tab]=tonumber(spent) or 0 end
     local best=ns.DominantTalentTab(points)
     if not best then return nil end
     local _,class=UnitClass("player")
     local rule=ns.ClassScrollRules[class]
     local caster=rule and rule.casterTabs and rule.casterTabs[best]
     return caster and "caster" or "melee"
+end
+local function weaponTalentPoints()
+    local points={0,0,0}
+    if GetTalentTabInfo then
+        -- Forever/vanilla returns name, iconTexture, pointsSpent, background.
+        for tab=1,3 do local _,_,spent=GetTalentTabInfo(tab);points[tab]=tonumber(spent) or 0 end
+    end
+    return points
+end
+local function resolveWeaponRole(class,setting)
+    if setting~="physical" and setting~="damage" and setting~="healing" then setting="auto" end
+    local points=weaponTalentPoints()
+    local source=setting and setting~="auto" and "manual" or ("auto talents "..points[1].."/"..points[2].."/"..points[3])
+    if setting=="physical" then return "physical",source,points end
+    if setting=="damage" then return "caster damage",source,points end
+    if setting=="healing" then return "caster healing",source,points end
+    if class=="MAGE" or class=="WARLOCK" then return "caster damage",source,points end
+    local total=points[1]+points[2]+points[3]
+    if class=="PRIEST" then
+        if total>0 and points[3]>points[1] and points[3]>points[2] then return "caster damage",source,points end
+        return "caster healing",source,points
+    end
+    local physicalTree=class=="PALADIN" and 3 or (class=="SHAMAN" and 2 or (class=="DRUID" and 2))
+    if physicalTree then
+        local highest=math.max(points[1],points[2],points[3])
+        local ties=0;for tab=1,3 do if points[tab]==highest then ties=ties+1 end end
+        if total==0 or ties~=1 then return "physical",source,points end
+        if points[physicalTree]==highest then return "physical",source,points end
+        if class=="SHAMAN" and points[1]==highest then return "caster damage",source,points end
+        if class=="DRUID" and points[1]==highest then return "caster damage",source,points end
+        return "caster healing",source,points
+    end
+    return "physical",source,points
 end
 local function auras()
     local out={}
@@ -275,6 +309,7 @@ local function updateView()
     ns.UpdateView(queue[1], #queue, DB, frame, icon, count, remain, InCombatLockdown(), questBadge)
 end
 local scheduleRebuild
+local imbueExpiryPending=false
 local function rebuild()
     if InCombatLockdown() then return end
     scanDebugLines={}
@@ -306,22 +341,25 @@ local function rebuild()
     local weaponSubclass=weaponID and getInstant and select(7,getInstant(weaponID))
     local enchantActive,enchantMS=false,0
     if GetWeaponEnchantInfo then enchantActive, enchantMS = (function() local active,ms=GetWeaponEnchantInfo();return active,ms end)() end
-    if enchantActive and tonumber(enchantMS) and enchantMS>0 then C_Timer.After(enchantMS/1000+0.1,function() if InCombatLockdown() then scheduleRebuild() else rebuild() end end) end
+    if enchantActive and tonumber(enchantMS) and enchantMS>0 and not imbueExpiryPending then
+        imbueExpiryPending=true
+        C_Timer.After(enchantMS/1000+0.1,function() imbueExpiryPending=false;if InCombatLockdown() then scheduleRebuild() else rebuild() end end)
+    end
     local class=select(2,UnitClass("player"))
-    local caster=class=="MAGE" or class=="WARLOCK" or class=="PRIEST" or class=="DRUID" or class=="SHAMAN" or class=="PALADIN"
+    local role,roleSource=resolveWeaponRole(class,DB.weaponRole)
     local allowedSubclass=weaponSubclass==0 or weaponSubclass==1 or weaponSubclass==4 or weaponSubclass==5 or weaponSubclass==6 or weaponSubclass==7 or weaponSubclass==8 or weaponSubclass==10 or weaponSubclass==13 or weaponSubclass==15
     local edgedSubclass=weaponSubclass==0 or weaponSubclass==1 or weaponSubclass==6 or weaponSubclass==7 or weaponSubclass==8 or weaponSubclass==13 or weaponSubclass==15
     local bluntSubclass=weaponSubclass==4 or weaponSubclass==5 or weaponSubclass==10
-    local function preferred(d)
-        if caster then return d.family=="wizard" or d.family=="mana" end
-        return d.family=="sharp" or d.family=="weight"
+    local function familyPriority(d)
+        if role=="physical" then return (d.family=="sharp" or d.family=="weight") and 2 or 0 end
+        if role=="caster damage" then return d.family=="wizard" and 2 or (d.family=="mana" and 1 or 0) end
+        return d.family=="mana" and 2 or (d.family=="wizard" and 1 or 0)
     end
     local function better(a,b)
         if not b then return true end
-        local ap,bp=preferred(a.data),preferred(b.data)
-        if ap~=bp then return ap end
+        local ap,bp=familyPriority(a.data),familyPriority(b.data)
+        if ap~=bp then return ap>bp end
         if a.data.tier~=b.data.tier then return a.data.tier>b.data.tier end
-        if a.data.family~=b.data.family and caster then return a.data.family=="wizard" end
         if a.slotCount~=b.slotCount then return a.slotCount<b.slotCount end
         if a.bag~=b.bag then return a.bag<b.bag end
         return a.slot<b.slot
@@ -338,13 +376,13 @@ local function rebuild()
                 if enchantActive then reason="imbue active"
                 elseif not weaponID or not allowedSubclass or not valid then reason="wrong weapon type"
                 elseif requiredLevel and requiredLevel>playerLevel then reason="level "..requiredLevel.." required"
-                elseif not preferred(d) then reason="not preferred for class"
+                elseif familyPriority(d)==0 then reason="not preferred for class"
                 else
                     local c={kind="weapon",itemID=bi.itemID,count=bi.stackCount or 1,slotCount=bi.stackCount or 1,bag=bag,slot=slot,targetSlot=16,data=d}
                     reason="eligible"
                     if better(c,imbueCandidate) then imbueCandidate=c end
                 end
-                debugLine("Clickables weapon "..d.name.." ("..bi.itemID.." at "..bagName(bag,slot).."), slot 16 subclass "..tostring(weaponSubclass)..": "..(reason or "eligible"))
+                debugLine("Clickables weapon "..d.name.." ("..bi.itemID.." at "..bagName(bag,slot).."), slot 16 subclass "..tostring(weaponSubclass)..", role "..role.." ("..roleSource.."): "..(reason or "eligible"))
             end
         end end
     end
@@ -443,6 +481,15 @@ local function options()
         local c=CreateFrame("CheckButton",nil,panel,"InterfaceOptionsCheckButtonTemplate");c:SetPoint("TOPLEFT",16,y);c.Text:SetText(label);c:SetChecked(DB[key]);c:SetScript("OnClick",safe("option toggle",function(self) DB[key]=self:GetChecked();rebuild() end));y=y-30
     end
     check("Lock position","locked"); check("Hide when empty (otherwise dim)","hideWhenEmpty"); check("Openables","openables"); check("Quest starter items","questStarters");check("Elixirs","elixirs");check("Scrolls","scrolls");check("Food","food");check("Weapon","weapon");check("Use scrolls/elixirs/food my class normally wouldn't","classFilterOverride")
+    local roleNames={auto="Auto",physical="Physical",damage="Caster (damage)",healing="Caster (healing)"}
+    local roleOrder={"auto","physical","damage","healing"}
+    local roleButton=CreateFrame("Button",nil,panel,"UIPanelButtonTemplate");roleButton:SetSize(220,22);roleButton:SetPoint("TOPLEFT",16,y)
+    local function updateRoleButton() roleButton:SetText("Weapon imbue role: "..(roleNames[DB.weaponRole] or roleNames.auto)) end
+    updateRoleButton()
+    roleButton:SetScript("OnClick",safe("weapon role option",function()
+        local current=1;for i,value in ipairs(roleOrder) do if value==DB.weaponRole then current=i;break end end
+        DB.weaponRole=roleOrder[current%#roleOrder+1];updateRoleButton();rebuild()
+    end));y=y-30
     local errorsHint=panel:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall");errorsHint:SetPoint("TOPLEFT",16,y);errorsHint:SetText("Show recent errors: /clickables errors    Clear: /clickables errors clear");y=y-24
     local scale=CreateFrame("Slider",nil,panel,"OptionsSliderTemplate");scale:SetPoint("TOPLEFT",20,y);scale:SetMinMaxValues(0.5,2);scale:SetValueStep(0.1);scale:SetValue(DB.scale);scale:SetWidth(180);scale.Text:SetText("Scale");scale:SetScript("OnValueChanged",safe("scale option",function(_,v) DB.scale=v;frame:SetScale(v) end))
     local listTitle=panel:CreateFontString(nil,"ARTWORK","GameFontNormal")
@@ -528,7 +575,7 @@ local slash=safe("slash command",slashImpl)
 SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
 local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED");events:RegisterEvent("GET_ITEM_INFO_RECEIVED");events:RegisterEvent("PLAYER_EQUIPMENT_CHANGED");events:RegisterEvent("UNIT_INVENTORY_CHANGED")
 events:RegisterEvent("UNIT_AURA");events:RegisterEvent("QUEST_LOG_UPDATE");events:RegisterEvent("QUEST_REMOVED");events:RegisterEvent("PLAYER_LEVEL_UP")
-    if C_EventUtils and C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("PLAYER_TALENT_UPDATE") then events:RegisterEvent("PLAYER_TALENT_UPDATE") end
+if C_EventUtils and C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("PLAYER_TALENT_UPDATE") then events:RegisterEvent("PLAYER_TALENT_UPDATE") end
 events:RegisterEvent("CHARACTER_POINTS_CHANGED")
 events:SetScript("OnEvent",safe("event handler",function(_,event,name)
     if event=="GET_ITEM_INFO_RECEIVED" then

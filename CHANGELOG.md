@@ -1,7 +1,7 @@
 # Changelog
 
 ## [1.2.6] - 2026-11-24
-- Add a Weapon category for main-hand sharpening stones, weightstones, and oils, with class preference, weapon-type matching, and secure target-slot use.
+- Add a Weapon category for main-hand sharpening stones, weightstones, and oils, with hybrid talent role detection, manual role selection, weapon-type matching, and secure target-slot use.
 
 All notable changes to Clickables are documented here.
 

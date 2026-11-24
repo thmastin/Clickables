@@ -2,7 +2,7 @@ local _, ns = ...
 ns = ns or {}
 
 ns.Defaults = { settingsVersion=2, point="CENTER", x=0, y=-120, scale=1, locked=false, hideWhenEmpty=false,
-    openables=true, questStarters=true, scrolls=true, elixirs=true, food=true, weapon=true, classFilterOverride=false, ignored={}, priority={"quest","openable","elixir","scroll","food","weapon"} }
+    openables=true, questStarters=true, scrolls=true, elixirs=true, food=true, weapon=true, weaponRole="auto", classFilterOverride=false, ignored={}, priority={"quest","openable","elixir","scroll","food","weapon"} }
 -- Seeded from Classic/Forever item data. Oils and stones each provide one temporary weapon enchant.
 ns.WeaponImbueItemIDs = {
     [2862]={name="Rough Sharpening Stone",family="sharp",tier=1,weaponType="edged",bonus=2},
@@ -278,6 +278,7 @@ function ns.MergeDefaults(db, defaults)
     local function copy(v) if type(v)~="table" then return v end local t={} for k,x in pairs(v) do t[k]=copy(x) end return t end
     for k,v in pairs(defaults) do if db[k]==nil then db[k]=copy(v) end end
     if type(db.ignored)~="table" then db.ignored={} end
+    if db.weaponRole~="auto" and db.weaponRole~="physical" and db.weaponRole~="damage" and db.weaponRole~="healing" then db.weaponRole=defaults.weaponRole end
     if type(db.priority)~="table" then db.priority=copy(defaults.priority) end
     local valid={quest=true,openable=true,elixir=true,scroll=true,food=true,weapon=true};local seen={},{}; local priority={}
     for _,v in ipairs(db.priority) do if valid[v] and not seen[v] then seen[v]=true;priority[#priority+1]=v end end

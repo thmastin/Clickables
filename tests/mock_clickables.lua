@@ -2,13 +2,14 @@ return function(ns,test)
  local function mockClient(saved,bags,tooltipBySlot,config)
   config=config or {}
   local timers,frames={},{}
-  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,level=config.level or 60,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior",classIDs=config.classIDs or {},mainHandID=config.mainHandID,enchantActive=config.enchantActive or false,enchantMS=config.enchantMS or 0,weaponSubclass=config.weaponSubclass or 7}
+  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,level=config.level or 60,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior",classIDs=config.classIDs or {},mainHandID=config.mainHandID,enchantActive=config.enchantActive or false,enchantMS=config.enchantMS or 0,weaponSubclass=config.weaponSubclass or 7,weaponRole=config.weaponRole or "auto"}
   local function itemClass(id)if config.unknownClassIDs and config.unknownClassIDs[id] then return nil end;return client.classIDs[id] or 0 end
   client.names={}
   for itemID,data in pairs(ns.ScrollItemIDs)do client.names[itemID]=data.name:gsub(" I$","")end
   for itemID,data in pairs(ns.ElixirItemIDs)do client.names[itemID]=data.name end
   local env=setmetatable({},{__index=_G})
   env._G=env;env.unpack=unpack;env.ClickablesDB=saved;env.NUM_BAG_SLOTS=config.numBagSlots or 0
+  if saved and config.weaponRole then saved.weaponRole=config.weaponRole end
   env.UIParent={GetWidth=function()return 800 end,GetHeight=function()return 600 end}
   env.GetTime=function()return client.now end
   env.GetCVar=function()return client.keyDown and "1" or "0" end
@@ -17,7 +18,7 @@ return function(ns,test)
   env.InCombatLockdown=function()return client.combat end
   env.print=function(...)client.printed[#client.printed+1]=table.concat({...}," ")end
   env.wipe=function(t)for k in pairs(t)do t[k]=nil end end
-  env.C_Timer={After=function(_,fn)timers[#timers+1]=fn end}
+  env.C_Timer={After=function(delay,fn)timers[#timers+1]={delay=delay,fn=fn} end}
   env.C_EventUtils={IsEventValid=function()return true end}
   env.C_Item={
    GetItemNameByID=function(id)return client.names and client.names[id] end,
@@ -42,7 +43,7 @@ return function(ns,test)
    if aura then return {name=aura.name,spellId=aura.spellID,icon=aura.icon}end
   end}
   env.C_QuestLog={IsOnQuest=function(questID)return client.onQuest[questID] or false end,IsQuestFlaggedCompleted=function(questID)return client.completed[questID] or false end}
-  env.GetTalentTabInfo=function(tab)return nil,nil,client.talentPoints[tab] or 0 end
+  env.GetTalentTabInfo=function(tab)return "Tree "..tab,"icon",client.talentPoints[tab] or 0,"background" end
   env.UnitClass=function()return client.localizedClass,client.className end
   env.UnitLevel=function()return client.level end
   env.GetInventoryItemID=function(unit,slot)if unit=="player" and slot==16 then return client.mainHandID end end
@@ -117,12 +118,20 @@ return function(ns,test)
    client.eventFrame.scripts.OnEvent(client.eventFrame,event,...)
   end
   client.flush=function()
-   while #timers>0 do local pending=timers;timers={};for _,fn in ipairs(pending)do fn()end end
+   while true do
+    local pending,keep={},{}
+    for _,timer in ipairs(timers)do if timer.delay<=1 then pending[#pending+1]=timer else keep[#keep+1]=timer end end
+    timers=keep
+    if #pending==0 then break end
+    for _,timer in ipairs(pending)do timer.fn()end
+   end
   end
+  client.pendingLongTimers=function()local n=0;for _,timer in ipairs(timers)do if timer.delay>1 then n=n+1 end end;return n end
   client.load=function()
    client:fire("ADDON_LOADED","Clickables");client.flush()
   end
   client.setCombat=function(value)client.combat=value end
+  client.frames=frames
   return client,env
  end
 
@@ -532,5 +541,54 @@ return function(ns,test)
   c.combat=false;c:fire("PLAYER_REGEN_ENABLED");c:flush()
   assert(c.button:GetAttribute("item1")=="item:12404")
   assert(c.eventFrame.events.PLAYER_EQUIPMENT_CHANGED and c.eventFrame.events.UNIT_INVENTORY_CHANGED)
+ end)
+ test("Retribution paladin auto role prefers stones",function()
+  local c=mockClient(nil,{[0]={{itemID=12404,stackCount=1},{itemID=20749,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7,className="PALADIN",localizedClass="Paladin",talentPoints={0,0,20}});c:load()
+  assert(c.button:GetAttribute("item1")=="item:12404")
+ end)
+ test("Holy paladin prefers mana oil over wizard oil",function()
+  local c=mockClient(nil,{[0]={{itemID=20749,stackCount=1},{itemID=20748,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7,className="PALADIN",localizedClass="Paladin",talentPoints={20,0,0}});c:load()
+  assert(c.button:GetAttribute("item1")=="item:20748")
+ end)
+ test("Elemental shaman prefers wizard oil",function()
+  local c=mockClient(nil,{[0]={{itemID=20749,stackCount=1},{itemID=20748,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7,className="SHAMAN",localizedClass="Shaman",talentPoints={20,0,0}});c:load()
+  assert(c.button:GetAttribute("item1")=="item:20749")
+ end)
+ test("Feral druid matches staff to weightstone",function()
+  local c=mockClient(nil,{[0]={{itemID=12404,stackCount=1},{itemID=12643,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=10,className="DRUID",localizedClass="Druid",talentPoints={0,20,0}});c:load()
+  assert(c.button:GetAttribute("item1")=="item:12643")
+ end)
+ test("zero-talent hybrid defaults to physical",function()
+  local c=mockClient(nil,{[0]={{itemID=12404,stackCount=1},{itemID=20749,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7,className="PALADIN",localizedClass="Paladin",talentPoints={0,0,0}});c:load()
+  assert(c.button:GetAttribute("item1")=="item:12404")
+ end)
+ test("manual weapon role overrides talent detection",function()
+  local c=mockClient({weaponRole="healing"},{[0]={{itemID=20749,stackCount=1},{itemID=20748,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7,className="PALADIN",localizedClass="Paladin",talentPoints={0,0,20}});c:load()
+  assert(c.button:GetAttribute("item1")=="item:20748")
+ end)
+ test("talent respec event changes automatic weapon role",function()
+  local c=mockClient(nil,{[0]={{itemID=12404,stackCount=1},{itemID=20748,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7,className="PALADIN",localizedClass="Paladin",talentPoints={0,0,20}});c:load()
+  assert(c.button:GetAttribute("item1")=="item:12404")
+  c.talentPoints={20,0,0};c:fire("PLAYER_TALENT_UPDATE");c:flush()
+  assert(c.button:GetAttribute("item1")=="item:20748")
+ end)
+ test("repeated rebuilds keep one pending weapon expiry timer",function()
+  local c=mockClient(nil,{[0]={{itemID=20749,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7,enchantActive=true,enchantMS=500000});c:load()
+  assert(c.pendingLongTimers()==1)
+  for _=1,4 do c:fire("PLAYER_EQUIPMENT_CHANGED");c:flush();assert(c.pendingLongTimers()==1) end
+ end)
+ test("weapon role option cycles and persists setting",function()
+  local c,env=mockClient();c:load()
+  local roleButton
+  for _,frame in ipairs(c.frames)do if frame.kind=="Button" and frame.text:find("Weapon imbue role:",1,true)then roleButton=frame;break end end
+  assert(roleButton,"weapon role cycle control should be visible")
+  roleButton.scripts.OnClick(roleButton);assert(env.ClickablesDB.weaponRole=="physical")
+  roleButton.scripts.OnClick(roleButton);assert(env.ClickablesDB.weaponRole=="damage")
+ end)
+ test("weapon debug reports resolved role and automatic talent source",function()
+  local c,env=mockClient(nil,{[0]={{itemID=20748,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7,className="PALADIN",localizedClass="Paladin",talentPoints={18,0,0}});c:load()
+  env.SlashCmdList.CLICKABLES("debug");c:fire("BAG_UPDATE_DELAYED");c:flush()
+  local found=false;for _,line in ipairs(c.printed)do if line:find("role caster healing (auto talents 18/0/0)",1,true)then found=true end end
+  assert(found,"weapon debug should include resolved role and talent-point source")
  end)
 end
