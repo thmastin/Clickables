@@ -43,7 +43,7 @@ test("defaults merge preserves saved values",function()
 end)
 test("defaults deep-copy nested tables and validate settings lists",function()
  local d=ns.MergeDefaults({priority={"food","food","bad"},ignored="bad"})
- assert(d.settingsVersion==2 and d.ignored and #d.priority==5 and d.priority[1]=="food")
+ assert(d.settingsVersion==2 and d.ignored and #d.priority==6 and d.priority[1]=="food")
  d.priority[1]="changed";assert(ns.Defaults.priority[1]=="quest")
  local a=ns.MergeDefaults({});a.priority[1]="changed";local b=ns.MergeDefaults({});assert(b.priority[1]=="quest")
  local laterDefaults={settingsVersion=3,priority={"quest","openable","elixir","scroll","food"},ignored={},future={nested={values={11,22}}}}

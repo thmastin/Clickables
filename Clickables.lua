@@ -274,6 +274,7 @@ local function updateView()
     count:SetText(queue[1] and queue[1].count>1 and queue[1].count or "")
     ns.UpdateView(queue[1], #queue, DB, frame, icon, count, remain, InCombatLockdown(), questBadge)
 end
+local scheduleRebuild
 local function rebuild()
     if InCombatLockdown() then return end
     scanDebugLines={}
@@ -300,6 +301,59 @@ local function rebuild()
             scanDebugLines[record.lineIndex]=scanDebugLines[record.lineIndex]..(record.food==best and ", selected" or ", not best eligible food")
         end
     end
+    local imbueCandidate
+    local weaponID=GetInventoryItemID and GetInventoryItemID("player",16)
+    local weaponSubclass=weaponID and getInstant and select(7,getInstant(weaponID))
+    local enchantActive,enchantMS=false,0
+    if GetWeaponEnchantInfo then enchantActive, enchantMS = (function() local active,ms=GetWeaponEnchantInfo();return active,ms end)() end
+    if enchantActive and tonumber(enchantMS) and enchantMS>0 then C_Timer.After(enchantMS/1000+0.1,function() if InCombatLockdown() then scheduleRebuild() else rebuild() end end) end
+    local class=select(2,UnitClass("player"))
+    local caster=class=="MAGE" or class=="WARLOCK" or class=="PRIEST" or class=="DRUID" or class=="SHAMAN" or class=="PALADIN"
+    local allowedSubclass=weaponSubclass==0 or weaponSubclass==1 or weaponSubclass==4 or weaponSubclass==5 or weaponSubclass==6 or weaponSubclass==7 or weaponSubclass==8 or weaponSubclass==10 or weaponSubclass==13 or weaponSubclass==15
+    local edgedSubclass=weaponSubclass==0 or weaponSubclass==1 or weaponSubclass==6 or weaponSubclass==7 or weaponSubclass==8 or weaponSubclass==13 or weaponSubclass==15
+    local bluntSubclass=weaponSubclass==4 or weaponSubclass==5 or weaponSubclass==10
+    local function preferred(d)
+        if caster then return d.family=="wizard" or d.family=="mana" end
+        return d.family=="sharp" or d.family=="weight"
+    end
+    local function better(a,b)
+        if not b then return true end
+        local ap,bp=preferred(a.data),preferred(b.data)
+        if ap~=bp then return ap end
+        if a.data.tier~=b.data.tier then return a.data.tier>b.data.tier end
+        if a.data.family~=b.data.family and caster then return a.data.family=="wizard" end
+        if a.slotCount~=b.slotCount then return a.slotCount<b.slotCount end
+        if a.bag~=b.bag then return a.bag<b.bag end
+        return a.slot<b.slot
+    end
+    if DB.weapon then
+        for bag=0,NUM_BAG_SLOTS do for slot=1,ns.GetContainerNumSlots(bag) do
+            local bi=ns.GetContainerItemInfo(bag,slot)
+            local d=bi and ns.WeaponImbueItemIDs[bi.itemID]
+            if d and not (DB.ignored and DB.ignored[bi.itemID]) then
+                local valid=d.weaponType=="any" or (d.weaponType=="edged" and edgedSubclass) or (d.weaponType=="blunt" and bluntSubclass)
+                local _,_,_,_,requiredLevel=getText(bi.itemID,bag,slot)
+                local playerLevel=UnitLevel and UnitLevel("player") or 0
+                local reason
+                if enchantActive then reason="imbue active"
+                elseif not weaponID or not allowedSubclass or not valid then reason="wrong weapon type"
+                elseif requiredLevel and requiredLevel>playerLevel then reason="level "..requiredLevel.." required"
+                elseif not preferred(d) then reason="not preferred for class"
+                else
+                    local c={kind="weapon",itemID=bi.itemID,count=bi.stackCount or 1,slotCount=bi.stackCount or 1,bag=bag,slot=slot,targetSlot=16,data=d}
+                    reason="eligible"
+                    if better(c,imbueCandidate) then imbueCandidate=c end
+                end
+                debugLine("Clickables weapon "..d.name.." ("..bi.itemID.." at "..bagName(bag,slot).."), slot 16 subclass "..tostring(weaponSubclass)..": "..(reason or "eligible"))
+            end
+        end end
+    end
+    if imbueCandidate then
+        fresh[#fresh+1]=imbueCandidate
+        for i=#scanDebugLines,1,-1 do
+            if scanDebugLines[i]:find("Clickables weapon ",1,true) and scanDebugLines[i]:find(" at "..bagName(imbueCandidate.bag,imbueCandidate.slot)..")",1,true) then scanDebugLines[i]=scanDebugLines[i]:gsub(": eligible$",": selected");break end
+        end
+    end
     local unique=ns.DedupeQueue(fresh,bagTotals);ns.SortQueue(unique,DB.priority)
     queue=unique
     if errorState.debug then
@@ -314,7 +368,7 @@ local function rebuild()
 end
 local refreshPending=false
 local combatCountPending=false
-local function scheduleRebuild()
+scheduleRebuild=function()
     if InCombatLockdown() then
         if not combatCountPending then combatCountPending=true;C_Timer.After(0.1,function() combatCountPending=false;if InCombatLockdown() then ns.UpdateItemCount(queue[1],count) end end) end
         return
@@ -388,7 +442,7 @@ local function options()
     local function check(label,key)
         local c=CreateFrame("CheckButton",nil,panel,"InterfaceOptionsCheckButtonTemplate");c:SetPoint("TOPLEFT",16,y);c.Text:SetText(label);c:SetChecked(DB[key]);c:SetScript("OnClick",safe("option toggle",function(self) DB[key]=self:GetChecked();rebuild() end));y=y-30
     end
-    check("Lock position","locked"); check("Hide when empty (otherwise dim)","hideWhenEmpty"); check("Openables","openables"); check("Quest starter items","questStarters");check("Elixirs","elixirs");check("Scrolls","scrolls");check("Food","food");check("Use scrolls/elixirs/food my class normally wouldn't","classFilterOverride")
+    check("Lock position","locked"); check("Hide when empty (otherwise dim)","hideWhenEmpty"); check("Openables","openables"); check("Quest starter items","questStarters");check("Elixirs","elixirs");check("Scrolls","scrolls");check("Food","food");check("Weapon","weapon");check("Use scrolls/elixirs/food my class normally wouldn't","classFilterOverride")
     local errorsHint=panel:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall");errorsHint:SetPoint("TOPLEFT",16,y);errorsHint:SetText("Show recent errors: /clickables errors    Clear: /clickables errors clear");y=y-24
     local scale=CreateFrame("Slider",nil,panel,"OptionsSliderTemplate");scale:SetPoint("TOPLEFT",20,y);scale:SetMinMaxValues(0.5,2);scale:SetValueStep(0.1);scale:SetValue(DB.scale);scale:SetWidth(180);scale.Text:SetText("Scale");scale:SetScript("OnValueChanged",safe("scale option",function(_,v) DB.scale=v;frame:SetScale(v) end))
     local listTitle=panel:CreateFontString(nil,"ARTWORK","GameFontNormal")
@@ -472,9 +526,9 @@ local function slashImpl(msg)
 end
 local slash=safe("slash command",slashImpl)
 SLASH_CLICKABLES1="/clickables";SlashCmdList.CLICKABLES=slash
-local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED");events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+local events=CreateFrame("Frame");events:RegisterEvent("ADDON_LOADED");events:RegisterEvent("BAG_UPDATE_DELAYED");events:RegisterEvent("PLAYER_ENTERING_WORLD");events:RegisterEvent("PLAYER_REGEN_ENABLED");events:RegisterEvent("QUEST_ACCEPTED");events:RegisterEvent("GET_ITEM_INFO_RECEIVED");events:RegisterEvent("PLAYER_EQUIPMENT_CHANGED");events:RegisterEvent("UNIT_INVENTORY_CHANGED")
 events:RegisterEvent("UNIT_AURA");events:RegisterEvent("QUEST_LOG_UPDATE");events:RegisterEvent("QUEST_REMOVED");events:RegisterEvent("PLAYER_LEVEL_UP")
-if C_EventUtils and C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("PLAYER_TALENT_UPDATE") then events:RegisterEvent("PLAYER_TALENT_UPDATE") end
+    if C_EventUtils and C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("PLAYER_TALENT_UPDATE") then events:RegisterEvent("PLAYER_TALENT_UPDATE") end
 events:RegisterEvent("CHARACTER_POINTS_CHANGED")
 events:SetScript("OnEvent",safe("event handler",function(_,event,name)
     if event=="GET_ITEM_INFO_RECEIVED" then
@@ -487,6 +541,8 @@ events:SetScript("OnEvent",safe("event handler",function(_,event,name)
     elseif event=="QUEST_LOG_UPDATE" or event=="QUEST_ACCEPTED" or event=="QUEST_REMOVED" then ns.MarkQuestLogReady(questLogState);scheduleRebuild()
     elseif event=="BAG_UPDATE_DELAYED" then
         scheduleRebuild()
+    elseif event=="PLAYER_EQUIPMENT_CHANGED" then scheduleRebuild()
+    elseif event=="UNIT_INVENTORY_CHANGED" and name=="player" then scheduleRebuild()
     elseif event=="PLAYER_TALENT_UPDATE" or event=="CHARACTER_POINTS_CHANGED" or event=="PLAYER_LEVEL_UP" then scheduleRebuild()
     elseif event=="PLAYER_ENTERING_WORLD" then scheduleRebuild() end
 end))

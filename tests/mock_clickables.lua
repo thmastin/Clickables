@@ -2,7 +2,7 @@ return function(ns,test)
  local function mockClient(saved,bags,tooltipBySlot,config)
   config=config or {}
   local timers,frames={},{}
-  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,level=config.level or 60,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior",classIDs=config.classIDs or {}}
+  local client={bags=bags or {[0]={{itemID=5523,stackCount=1}}},tooltipBySlot=tooltipBySlot or {},tooltipFrames=0,scanCalls=0,combat=false,alt=false,keyDown=false,now=10,level=config.level or 60,printed={},auras=config.auras or {},questInfo=config.questInfo or {},onQuest=config.onQuest or {},completed=config.completed or {},talentPoints=config.talentPoints or {0,0,0},className=config.className or "WARRIOR",localizedClass=config.localizedClass or "Warrior",classIDs=config.classIDs or {},mainHandID=config.mainHandID,enchantActive=config.enchantActive or false,enchantMS=config.enchantMS or 0,weaponSubclass=config.weaponSubclass or 7}
   local function itemClass(id)if config.unknownClassIDs and config.unknownClassIDs[id] then return nil end;return client.classIDs[id] or 0 end
   client.names={}
   for itemID,data in pairs(ns.ScrollItemIDs)do client.names[itemID]=data.name:gsub(" I$","")end
@@ -24,7 +24,7 @@ return function(ns,test)
    GetItemInfo=function(id)return client.names[id],nil,nil,nil,nil,nil,nil,nil,nil,nil,nil,itemClass(id) end,
    GetItemInfoInstant=function(id)
     local classID=itemClass(id)
-    return id,classID==0 and "Consumable" or "Item",classID==0 and "Food & Drink" or "Recipe",nil,nil,classID,0
+    return id,classID==0 and "Consumable" or "Item",classID==0 and "Food & Drink" or "Recipe",nil,nil,classID,id==client.mainHandID and client.weaponSubclass or 0
    end,
    RequestLoadItemDataByID=function(id)client.requested=client.requested or {};client.requested[id]=true end
   }
@@ -45,6 +45,8 @@ return function(ns,test)
   env.GetTalentTabInfo=function(tab)return nil,nil,client.talentPoints[tab] or 0 end
   env.UnitClass=function()return client.localizedClass,client.className end
   env.UnitLevel=function()return client.level end
+  env.GetInventoryItemID=function(unit,slot)if unit=="player" and slot==16 then return client.mainHandID end end
+  env.GetWeaponEnchantInfo=function()return client.enchantActive,client.enchantMS,0,false,0,0 end
   env.C_Item.GetItemIconByID=function()return 134400 end
   env.ITEM_OPENABLE="Right Click to Open";env.ITEM_STARTS_QUEST="This Item Begins a Quest";env.ITEM_LOCKED="Locked"
   env.SlashCmdList={};env.InterfaceOptions_AddCategory=function()end
@@ -276,8 +278,8 @@ return function(ns,test)
   local c,env=mockClient(saved);c:load()
   assert(env.ClickablesDB.ignored==oldIgnore and env.ClickablesDB.ignored[12345])
   assert(env.ClickablesDB.point=="TOPLEFT"and env.ClickablesDB.x==45 and env.ClickablesDB.y==67 and env.ClickablesDB.scale==1.6)
-  assert(env.ClickablesDB.settingsVersion==2 and #env.ClickablesDB.priority==5)
-  assert(table.concat(env.ClickablesDB.priority,",")=="quest,openable,elixir,scroll,food")
+  assert(env.ClickablesDB.settingsVersion==2 and #env.ClickablesDB.priority==6)
+  assert(table.concat(env.ClickablesDB.priority,",")=="quest,openable,elixir,scroll,food,weapon")
  end)
 
  test("rebuild deduplicates a three-slot item ID and keeps the summed count",function()
@@ -499,5 +501,36 @@ return function(ns,test)
   c.now=14.9;env.SlashCmdList.CLICKABLES("clear");assert(next(env.ClickablesDB.ignored)==nil,"second clear within five seconds should empty the ignore list")
   env.ClickablesDB.ignored[5523]=true;c.now=20;env.SlashCmdList.CLICKABLES("clear")
   c.now=25.1;env.SlashCmdList.CLICKABLES("clear");assert(env.ClickablesDB.ignored[5523],"an expired confirmation must only arm a new window")
+ end)
+
+ test("weapon imbues skip an already enchanted main hand",function()
+  local c=mockClient(nil,{[0]={{itemID=12404,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7,enchantActive=true});c:load()
+  assert(c.button:GetAttribute("item1")==nil)
+ end)
+ test("weapon imbues match sharp stones to edged and weightstones to blunt weapons",function()
+  local c=mockClient(nil,{[0]={{itemID=12404,stackCount=1},{itemID=12643,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=4});c:load()
+  assert(c.button:GetAttribute("item1")=="item:12643","mace should select dense weightstone")
+  c.weaponSubclass=7;c:fire("PLAYER_EQUIPMENT_CHANGED");c:flush()
+  assert(c.button:GetAttribute("item1")=="item:12404","sword should select dense sharpening stone")
+ end)
+ test("caster prefers the highest-tier carried oil",function()
+  local c=mockClient(nil,{[0]={{itemID=20744,stackCount=1},{itemID=20749,stackCount=1},{itemID=12404,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7,className="MAGE",localizedClass="Mage"});c:load()
+  assert(c.button:GetAttribute("item1")=="item:20749")
+ end)
+ test("weapon action sets target slot sixteen",function()
+  local c=mockClient(nil,{[0]={{itemID=12404,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7});c:load()
+  assert(c.button:GetAttribute("type1")=="item" and c.button:GetAttribute("item1")=="item:12404")
+  assert(c.button:GetAttribute("target-slot")==16)
+ end)
+ test("weapon imbue is unavailable without a main-hand weapon",function()
+  local c=mockClient(nil,{[0]={{itemID=12404,stackCount=1}}},nil,{weaponSubclass=7});c:load()
+  assert(c.button:GetAttribute("item1")==nil)
+ end)
+ test("weapon equipment events defer updates until combat ends",function()
+  local c=mockClient(nil,{[0]={{itemID=12404,stackCount=1}}},nil,{mainHandID=90001,weaponSubclass=7});c.combat=true;c:load();c:flush()
+  assert(c.button:GetAttribute("item1")==nil)
+  c.combat=false;c:fire("PLAYER_REGEN_ENABLED");c:flush()
+  assert(c.button:GetAttribute("item1")=="item:12404")
+  assert(c.eventFrame.events.PLAYER_EQUIPMENT_CHANGED and c.eventFrame.events.UNIT_INVENTORY_CHANGED)
  end)
 end
