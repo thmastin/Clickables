@@ -107,15 +107,22 @@ local function resolveWeaponRole(class,setting)
         if total>0 and points[3]>points[1] and points[3]>points[2] then return "caster damage",source,points end
         return "caster healing",source,points
     end
-    local physicalTree=class=="PALADIN" and 3 or (class=="SHAMAN" and 2 or (class=="DRUID" and 2))
+    local physicalTree=class=="SHAMAN" and 2 or (class=="DRUID" and 2)
     if physicalTree then
         local highest=math.max(points[1],points[2],points[3])
         local ties=0;for tab=1,3 do if points[tab]==highest then ties=ties+1 end end
+        if class=="DRUID" and (total==0 or ties~=1 or points[2]==highest) then return "none",source,points end
         if total==0 or ties~=1 then return "physical",source,points end
         if points[physicalTree]==highest then return "physical",source,points end
         if class=="SHAMAN" and points[1]==highest then return "caster damage",source,points end
         if class=="DRUID" and points[1]==highest then return "caster damage",source,points end
         return "caster healing",source,points
+    end
+    if class=="PALADIN" then
+        local highest=math.max(points[1],points[2],points[3])
+        local ties=0;for tab=1,3 do if points[tab]==highest then ties=ties+1 end end
+        if total>0 and ties==1 and points[1]==highest then return "caster healing",source,points end
+        return "physical",source,points
     end
     return "physical",source,points
 end
@@ -373,7 +380,8 @@ local function rebuild()
                 local _,_,_,_,requiredLevel=getText(bi.itemID,bag,slot)
                 local playerLevel=UnitLevel and UnitLevel("player") or 0
                 local reason
-                if enchantActive then reason="imbue active"
+                if role=="none" then reason="no imbue for role"
+                elseif enchantActive then reason="imbue active"
                 elseif not weaponID or not allowedSubclass or not valid then reason="wrong weapon type"
                 elseif requiredLevel and requiredLevel>playerLevel then reason="level "..requiredLevel.." required"
                 elseif familyPriority(d)==0 then reason="not preferred for class"
