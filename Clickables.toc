@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Clickables
 ## Notes: Secure button for the next item to click
-## Version: 1.2.5
+## Version: 1.2.6
 ## X-Curse-Project-ID: 1804135
 ## SavedVariables: ClickablesDB
 

@@ -2,7 +2,27 @@ local _, ns = ...
 ns = ns or {}
 
 ns.Defaults = { settingsVersion=2, point="CENTER", x=0, y=-120, scale=1, locked=false, hideWhenEmpty=false,
-    openables=true, questStarters=true, scrolls=true, elixirs=true, food=true, classFilterOverride=false, ignored={}, priority={"quest","openable","elixir","scroll","food"} }
+    openables=true, questStarters=true, scrolls=true, elixirs=true, food=true, weapon=true, weaponRole="auto", classFilterOverride=false, ignored={}, priority={"quest","openable","elixir","scroll","food","weapon"} }
+-- Seeded from Classic/Forever item data. Oils and stones each provide one temporary weapon enchant.
+ns.WeaponImbueItemIDs = {
+    [2862]={name="Rough Sharpening Stone",family="sharp",tier=1,weaponType="edged",bonus=2},
+    [2863]={name="Coarse Sharpening Stone",family="sharp",tier=2,weaponType="edged",bonus=3},
+    [2871]={name="Heavy Sharpening Stone",family="sharp",tier=3,weaponType="edged",bonus=4},
+    [7964]={name="Solid Sharpening Stone",family="sharp",tier=4,weaponType="edged",bonus=6},
+    [12404]={name="Dense Sharpening Stone",family="sharp",tier=5,weaponType="edged",bonus=8},
+    [3239]={name="Rough Weightstone",family="weight",tier=1,weaponType="blunt",bonus=2},
+    [3240]={name="Coarse Weightstone",family="weight",tier=2,weaponType="blunt",bonus=3},
+    [3241]={name="Heavy Weightstone",family="weight",tier=3,weaponType="blunt",bonus=4},
+    [7965]={name="Solid Weightstone",family="weight",tier=4,weaponType="blunt",bonus=6},
+    [12643]={name="Dense Weightstone",family="weight",tier=5,weaponType="blunt",bonus=8},
+    [20744]={name="Minor Wizard Oil",family="wizard",tier=1,weaponType="any",bonus=8},
+    [20746]={name="Lesser Wizard Oil",family="wizard",tier=2,weaponType="any",bonus=16},
+    [20750]={name="Wizard Oil",family="wizard",tier=3,weaponType="any",bonus=24},
+    [20749]={name="Brilliant Wizard Oil",family="wizard",tier=4,weaponType="any",bonus=36},
+    [20745]={name="Minor Mana Oil",family="mana",tier=1,weaponType="any",bonus=4},
+    [20747]={name="Lesser Mana Oil",family="mana",tier=2,weaponType="any",bonus=8},
+    [20748]={name="Brilliant Mana Oil",family="mana",tier=3,weaponType="any",bonus=12},
+}
 ns.OpenableItemIDs = {
     [5523]=true, [5524]=true, [5525]=true, [5526]=true,
     [16882]=true, [16883]=true, [16884]=true, [16885]=true,
@@ -258,8 +278,9 @@ function ns.MergeDefaults(db, defaults)
     local function copy(v) if type(v)~="table" then return v end local t={} for k,x in pairs(v) do t[k]=copy(x) end return t end
     for k,v in pairs(defaults) do if db[k]==nil then db[k]=copy(v) end end
     if type(db.ignored)~="table" then db.ignored={} end
+    if db.weaponRole~="auto" and db.weaponRole~="physical" and db.weaponRole~="damage" and db.weaponRole~="healing" then db.weaponRole=defaults.weaponRole end
     if type(db.priority)~="table" then db.priority=copy(defaults.priority) end
-    local valid={quest=true,openable=true,elixir=true,scroll=true,food=true};local seen={},{}; local priority={}
+    local valid={quest=true,openable=true,elixir=true,scroll=true,food=true,weapon=true};local seen={},{}; local priority={}
     for _,v in ipairs(db.priority) do if valid[v] and not seen[v] then seen[v]=true;priority[#priority+1]=v end end
     for _,v in ipairs(defaults.priority) do if not seen[v] then priority[#priority+1]=v end end
     db.priority=priority;db.settingsVersion=defaults.settingsVersion
@@ -336,9 +357,10 @@ function ns.UpdateView(current,queueLength,db,frame,icon,count,remain,inCombat,q
             questBadge:Show()
         else questBadge:Hide() end
     end
-    if not current then frame:SetAttribute("item1",nil);icon:SetTexture(nil);count:SetText("");remain:SetText("");if db.hideWhenEmpty then frame:Hide() else frame:SetAlpha(0.35);frame:Show() end;return end
+    if not current then frame:SetAttribute("item1",nil);frame:SetAttribute("target-slot",nil);icon:SetTexture(nil);count:SetText("");remain:SetText("");if db.hideWhenEmpty then frame:Hide() else frame:SetAlpha(0.35);frame:Show() end;return end
     frame:SetAlpha(1);frame:Show();icon:SetTexture(ns.GetItemIcon(current.itemID));count:SetText(current.count>1 and current.count or "");remain:SetText(queueLength>1 and ("+"..(queueLength-1).." queued") or "")
     local item="item:"..current.itemID;frame:SetAttribute("item1",item)
+    frame:SetAttribute("target-slot",current.targetSlot)
 end
 function ns.Classify(item,settings)
     settings=settings or ns.Defaults
